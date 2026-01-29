@@ -1,5 +1,44 @@
-import { supabase } from '../config/supabase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  updateDoc, 
+  query, 
+  where, 
+  orderBy,
+  Timestamp
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 import { AppUser } from '../types';
+
+// Helper to convert Firestore Timestamp to Date
+const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => {
+  if (!timestamp) return undefined;
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  return new Date(timestamp);
+};
+
+// Helper to map Firestore data to AppUser type
+const mapDocToUser = (id: string, data: Record<string, unknown>): AppUser => ({
+  id,
+  userId: id, // Use id as userId for compatibility
+  displayName: data.displayName as string,
+  email: data.email as string,
+  role: data.role as 'admin' | 'user',
+  isActive: (data.isActive as boolean) ?? true,
+  createdAt: toDate(data.createdAt as Timestamp | string) || new Date(),
+  lastLogin: toDate(data.lastLogin as Timestamp | string),
+  subscriptionStatus: (data.subscriptionStatus as AppUser['subscriptionStatus']) || 'trial',
+  isLocked: (data.isLocked as boolean) || false,
+  lockedReason: data.lockedReason as string,
+  lockedBy: data.lockedBy as string,
+  lockedAt: toDate(data.lockedAt as Timestamp | string),
+  trialStartDate: toDate(data.trialStartDate as Timestamp | string),
+  trialEndDate: toDate(data.trialEndDate as Timestamp | string),
+  subscriptionStartDate: toDate(data.subscriptionStartDate as Timestamp | string),
+  subscriptionEndDate: toDate(data.subscriptionEndDate as Timestamp | string),
+});
 
 export class UserService {
   private static instance: UserService;
@@ -23,36 +62,23 @@ export class UserService {
   }
 
   async authenticateUser(_userId: string, _password: string): Promise<AppUser | null> {
-    // This method is deprecated - use Supabase auth instead
-    console.warn('authenticateUser is deprecated. Use Supabase auth via supabaseAuthService.');
+    // This method is deprecated - use Firebase auth instead
+    console.warn('authenticateUser is deprecated. Use Firebase auth via firebaseAuthService.');
     return null;
   }
 
   async getAllUsers(): Promise<AppUser[]> {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false });
+      const q = query(
+        collection(db, COLLECTIONS.USERS),
+        where('isActive', '==', true),
+        orderBy('createdAt', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      return (data || []).map(row => ({
-        id: row.id,
-        userId: row.id, // Use id as userId for compatibility
-        displayName: row.display_name,
-        email: row.email,
-        role: row.role,
-        isActive: row.is_active,
-        createdAt: new Date(row.created_at),
-        lastLogin: row.last_login ? new Date(row.last_login) : undefined,
-        subscriptionStatus: row.subscription_status || 'trial',
-        isLocked: row.is_locked || false,
-      }));
+      return querySnapshot.docs.map(docSnap => 
+        mapDocToUser(docSnap.id, docSnap.data())
+      );
     } catch (error) {
       console.error('Error getting users:', error);
       return [];
@@ -61,34 +87,11 @@ export class UserService {
 
   async getUserById(userId: string): Promise<AppUser | null> {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', userId)
-        .single();
+      const docSnap = await getDoc(doc(db, COLLECTIONS.USERS, userId));
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // No rows returned
-          return null;
-        }
-        throw error;
-      }
+      if (!docSnap.exists()) return null;
 
-      if (!data) return null;
-
-      return {
-        id: data.id,
-        userId: data.id,
-        displayName: data.display_name,
-        email: data.email,
-        role: data.role,
-        isActive: data.is_active,
-        createdAt: new Date(data.created_at),
-        lastLogin: data.last_login ? new Date(data.last_login) : undefined,
-        subscriptionStatus: data.subscription_status || 'trial',
-        isLocked: data.is_locked || false,
-      };
+      return mapDocToUser(docSnap.id, docSnap.data());
     } catch (error) {
       console.error('Error getting user by ID:', error);
       return null;
@@ -97,19 +100,62 @@ export class UserService {
 
   async updateUserLastLogin(userId: string): Promise<void> {
     try {
-      const { error } = await supabase
-        .from('users')
-        .update({ last_login: new Date().toISOString() })
-        .eq('id', userId);
-
-      if (error) {
-        console.error('Error updating last login:', error);
-      }
+      await updateDoc(doc(db, COLLECTIONS.USERS, userId), {
+        lastLogin: new Date().toISOString()
+      });
     } catch (error) {
       console.error('Error updating last login:', error);
+    }
+  }
+
+  async lockUser(userId: string, reason: string, lockedBy: string): Promise<void> {
+    try {
+      await updateDoc(doc(db, COLLECTIONS.USERS, userId), {
+        isLocked: true,
+        lockedReason: reason,
+        lockedBy,
+        lockedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Error locking user:', error);
+      throw error;
+    }
+  }
+
+  async unlockUser(userId: string): Promise<void> {
+    try {
+      await updateDoc(doc(db, COLLECTIONS.USERS, userId), {
+        isLocked: false,
+        lockedReason: null,
+        lockedBy: null,
+        lockedAt: null,
+      });
+    } catch (error) {
+      console.error('Error unlocking user:', error);
+      throw error;
+    }
+  }
+
+  async updateSubscription(
+    userId: string, 
+    subscriptionStatus: AppUser['subscriptionStatus'],
+    startDate?: Date,
+    endDate?: Date
+  ): Promise<void> {
+    try {
+      const updateData: Record<string, unknown> = {
+        subscriptionStatus,
+      };
+      
+      if (startDate) updateData.subscriptionStartDate = startDate.toISOString();
+      if (endDate) updateData.subscriptionEndDate = endDate.toISOString();
+
+      await updateDoc(doc(db, COLLECTIONS.USERS, userId), updateData);
+    } catch (error) {
+      console.error('Error updating subscription:', error);
+      throw error;
     }
   }
 }
 
 export const userService = UserService.getInstance();
-

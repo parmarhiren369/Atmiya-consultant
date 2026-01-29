@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { razorpayService, PaymentHistory } from '../services/razorpayService';
-import { supabaseAuthService } from '../services/supabaseAuthService';
+import { firebaseAuthService } from '../services/firebaseAuthService';
 import toast from 'react-hot-toast';
 import { 
   CreditCard, Calendar, CheckCircle, XCircle, Clock, 
@@ -74,7 +74,7 @@ export function SubscriptionPage() {
 
   if (!user) return null;
 
-  const daysRemaining = supabaseAuthService.getDaysRemaining(user);
+  const daysRemaining = firebaseAuthService.getDaysRemaining(user);
   const isExpired = user.subscriptionStatus === 'expired';
   const isTrial = user.subscriptionStatus === 'trial';
 

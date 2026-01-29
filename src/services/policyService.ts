@@ -1,6 +1,34 @@
-import { supabase } from '../config/supabase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  Timestamp,
+  setDoc
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 import { Policy } from '../types';
 import { activityLogService } from './activityLogService';
+
+// Helper to convert Firestore Timestamp to Date
+const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => {
+  if (!timestamp) return undefined;
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  return new Date(timestamp);
+};
+
+// Helper to convert Date to ISO string for Firestore
+const toISOString = (date: Date | string | undefined): string | undefined => {
+  if (!date) return undefined;
+  if (date instanceof Date) return date.toISOString();
+  return date;
+};
 
 export const policyService = {
   // Get all active policies (optionally filtered by userId)
@@ -8,75 +36,75 @@ export const policyService = {
     try {
       console.log('Fetching policies for userId:', userId);
       
-      let query = supabase
-        .from('policies')
-        .select('*')
-        .order('created_at', { ascending: false });
-
+      let q;
       if (userId) {
-        query = query.eq('user_id', userId);
+        q = query(
+          collection(db, COLLECTIONS.POLICIES),
+          where('userId', '==', userId),
+          orderBy('createdAt', 'desc')
+        );
+      } else {
+        q = query(
+          collection(db, COLLECTIONS.POLICIES),
+          orderBy('createdAt', 'desc')
+        );
       }
 
-      const { data, error } = await query;
+      const querySnapshot = await getDocs(q);
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      // Convert snake_case to camelCase
-      const policies: Policy[] = (data || []).map(row => ({
-        id: row.id,
-        userId: row.user_id,
-        policyholderName: row.policyholder_name,
-        contactNo: row.contact_no,
-        emailId: row.email_id,
-        address: row.address,
-        policyNumber: row.policy_number,
-        insuranceCompany: row.insurance_company,
-        policyType: row.policy_type,
-        premiumAmount: row.premium_amount,
-        coverageAmount: row.coverage_amount,
-        policyStartDate: row.policy_start_date ? new Date(row.policy_start_date) : undefined,
-        policyEndDate: row.policy_end_date ? new Date(row.policy_end_date) : undefined,
-        premiumDueDate: row.premium_due_date ? new Date(row.premium_due_date) : undefined,
-        // Legacy field mappings for backward compatibility
-        startDate: row.start_date || row.policy_start_date,
-        expiryDate: row.expiry_date || row.policy_end_date,
-        status: row.status,
-        paymentFrequency: row.payment_frequency,
-        nomineeName: row.nominee_name,
-        nomineeRelationship: row.nominee_relationship,
-        notes: row.notes,
-        documents: row.documents || [],
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-        // Additional custom fields from database
-        businessType: row.business_type,
-        memberOf: row.member_of,
-        registrationNo: row.registration_no,
-        engineNo: row.engine_no,
-        chasisNo: row.chasis_no,
-        hp: row.hp,
-        riskLocationAddress: row.risk_location_address,
-        idv: row.idv,
-        netPremium: row.net_premium,
-        odPremium: row.od_premium,
-        thirdPartyPremium: row.third_party_premium,
-        gst: row.gst,
-        totalPremium: row.total_premium,
-        commissionPercentage: row.commission_percentage,
-        commissionAmount: row.commission_amount,
-        remark: row.remark,
-        productType: row.product_type,
-        referenceFromName: row.reference_from_name,
-        isOneTimePolicy: row.is_one_time_policy,
-        ncbPercentage: row.ncb_percentage,
-        pdfFileName: row.pdf_file_name,
-        fileId: row.file_id,
-        driveFileUrl: row.drive_file_url,
-        documentsFolderLink: row.documents_folder_link,
-      }));
+      const policies: Policy[] = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          userId: data.userId,
+          policyholderName: data.policyholderName,
+          contactNo: data.contactNo,
+          emailId: data.emailId,
+          address: data.address,
+          policyNumber: data.policyNumber,
+          insuranceCompany: data.insuranceCompany,
+          policyType: data.policyType,
+          premiumAmount: data.premiumAmount,
+          coverageAmount: data.coverageAmount,
+          policyStartDate: toDate(data.policyStartDate),
+          policyEndDate: toDate(data.policyEndDate),
+          premiumDueDate: toDate(data.premiumDueDate),
+          startDate: data.startDate || data.policyStartDate,
+          expiryDate: data.expiryDate || data.policyEndDate,
+          status: data.status,
+          paymentFrequency: data.paymentFrequency,
+          nomineeName: data.nomineeName,
+          nomineeRelationship: data.nomineeRelationship,
+          notes: data.notes,
+          documents: data.documents || [],
+          createdAt: toDate(data.createdAt) || new Date(),
+          updatedAt: toDate(data.updatedAt) || new Date(),
+          businessType: data.businessType,
+          memberOf: data.memberOf,
+          registrationNo: data.registrationNo,
+          engineNo: data.engineNo,
+          chasisNo: data.chasisNo,
+          hp: data.hp,
+          riskLocationAddress: data.riskLocationAddress,
+          idv: data.idv,
+          netPremium: data.netPremium,
+          odPremium: data.odPremium,
+          thirdPartyPremium: data.thirdPartyPremium,
+          gst: data.gst,
+          totalPremium: data.totalPremium,
+          commissionPercentage: data.commissionPercentage,
+          commissionAmount: data.commissionAmount,
+          remark: data.remark,
+          productType: data.productType,
+          referenceFromName: data.referenceFromName,
+          isOneTimePolicy: data.isOneTimePolicy,
+          ncbPercentage: data.ncbPercentage,
+          pdfFileName: data.pdfFileName,
+          fileId: data.fileId,
+          driveFileUrl: data.driveFileUrl,
+          documentsFolderLink: data.documentsFolderLink,
+        };
+      });
 
       console.log(`Found ${policies.length} active policies`);
       return policies;
@@ -93,83 +121,74 @@ export const policyService = {
     userDisplayName?: string
   ): Promise<string> => {
     try {
-      // Validate userId is provided
       if (!userId) {
         throw new Error('User ID is required to add a policy');
       }
 
-      // Convert camelCase to snake_case for Supabase
+      const now = new Date().toISOString();
       const dbPolicy = {
-        user_id: userId,
-        policyholder_name: policyData.policyholderName,
-        contact_no: policyData.contactNo,
-        email_id: policyData.emailId,
-        address: policyData.address,
-        policy_number: policyData.policyNumber,
-        insurance_company: policyData.insuranceCompany,
-        policy_type: policyData.policyType,
-        premium_amount: policyData.premiumAmount,
-        coverage_amount: policyData.coverageAmount,
-        policy_start_date: policyData.policyStartDate,
-        policy_end_date: policyData.policyEndDate,
-        premium_due_date: policyData.premiumDueDate,
+        userId: userId,
+        policyholderName: policyData.policyholderName,
+        contactNo: policyData.contactNo || null,
+        emailId: policyData.emailId || null,
+        address: policyData.address || null,
+        policyNumber: policyData.policyNumber,
+        insuranceCompany: policyData.insuranceCompany,
+        policyType: policyData.policyType,
+        premiumAmount: policyData.premiumAmount || null,
+        coverageAmount: policyData.coverageAmount || null,
+        policyStartDate: toISOString(policyData.policyStartDate as Date | undefined),
+        policyEndDate: toISOString(policyData.policyEndDate as Date | undefined),
+        premiumDueDate: toISOString(policyData.premiumDueDate as Date | undefined),
         status: policyData.status || 'active',
-        payment_frequency: policyData.paymentFrequency,
-        nominee_name: policyData.nomineeName,
-        nominee_relationship: policyData.nomineeRelationship,
-        notes: policyData.notes,
+        paymentFrequency: policyData.paymentFrequency || null,
+        nomineeName: policyData.nomineeName || null,
+        nomineeRelationship: policyData.nomineeRelationship || null,
+        notes: policyData.notes || null,
         documents: policyData.documents || [],
-        // Additional custom fields
-        business_type: policyData.businessType,
-        member_of: policyData.memberOf || null,
-        registration_no: policyData.registrationNo,
-        engine_no: policyData.engineNo,
-        chasis_no: policyData.chasisNo,
-        hp: policyData.hp,
-        risk_location_address: policyData.riskLocationAddress,
-        idv: policyData.idv,
-        net_premium: policyData.netPremium,
-        od_premium: policyData.odPremium,
-        third_party_premium: policyData.thirdPartyPremium,
-        gst: policyData.gst,
-        total_premium: policyData.totalPremium,
-        commission_percentage: policyData.commissionPercentage,
-        commission_amount: policyData.commissionAmount,
-        remark: policyData.remark,
-        product_type: policyData.productType,
-        reference_from_name: policyData.referenceFromName,
-        is_one_time_policy: policyData.isOneTimePolicy,
-        ncb_percentage: policyData.ncbPercentage,
-        pdf_file_name: policyData.pdfFileName,
-        file_id: policyData.fileId,
-        drive_file_url: policyData.driveFileUrl,
-        documents_folder_link: policyData.documentsFolderLink,
+        createdAt: now,
+        updatedAt: now,
+        businessType: policyData.businessType || null,
+        memberOf: policyData.memberOf || null,
+        registrationNo: policyData.registrationNo || null,
+        engineNo: policyData.engineNo || null,
+        chasisNo: policyData.chasisNo || null,
+        hp: policyData.hp || null,
+        riskLocationAddress: policyData.riskLocationAddress || null,
+        idv: policyData.idv || null,
+        netPremium: policyData.netPremium || null,
+        odPremium: policyData.odPremium || null,
+        thirdPartyPremium: policyData.thirdPartyPremium || null,
+        gst: policyData.gst || null,
+        totalPremium: policyData.totalPremium || null,
+        commissionPercentage: policyData.commissionPercentage || null,
+        commissionAmount: policyData.commissionAmount || null,
+        remark: policyData.remark || null,
+        productType: policyData.productType || null,
+        referenceFromName: policyData.referenceFromName || null,
+        isOneTimePolicy: policyData.isOneTimePolicy || false,
+        ncbPercentage: policyData.ncbPercentage || null,
+        pdfFileName: policyData.pdfFileName || null,
+        fileId: policyData.fileId || null,
+        driveFileUrl: policyData.driveFileUrl || null,
+        documentsFolderLink: policyData.documentsFolderLink || null,
       };
 
-      const { data, error } = await supabase
-        .from('policies')
-        .insert([dbPolicy])
-        .select()
-        .single();
+      const docRef = await addDoc(collection(db, COLLECTIONS.POLICIES), dbPolicy);
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      console.log(`Policy created with ID: ${data.id}`);
+      console.log(`Policy created with ID: ${docRef.id}`);
 
       // Create activity log
       await activityLogService.createActivityLog(
         'CREATE',
-        data.id,
+        docRef.id,
         policyData.policyholderName,
         `New policy created for ${policyData.policyholderName}${userDisplayName ? ` by ${userDisplayName}` : ''}`,
         userId,
         userDisplayName
       );
 
-      return data.id;
+      return docRef.id;
     } catch (error) {
       console.error('Error adding policy:', error);
       throw new Error('Failed to add policy to database');
@@ -185,37 +204,30 @@ export const policyService = {
     userDisplayName?: string
   ): Promise<void> => {
     try {
-      // Convert camelCase to snake_case for Supabase
-      const dbUpdates: Record<string, unknown> = {};
+      const dbUpdates: Record<string, unknown> = {
+        updatedAt: new Date().toISOString()
+      };
       
-      if (updates.policyholderName !== undefined) dbUpdates.policyholder_name = updates.policyholderName;
-      if (updates.contactNo !== undefined) dbUpdates.contact_no = updates.contactNo;
-      if (updates.emailId !== undefined) dbUpdates.email_id = updates.emailId;
+      if (updates.policyholderName !== undefined) dbUpdates.policyholderName = updates.policyholderName;
+      if (updates.contactNo !== undefined) dbUpdates.contactNo = updates.contactNo;
+      if (updates.emailId !== undefined) dbUpdates.emailId = updates.emailId;
       if (updates.address !== undefined) dbUpdates.address = updates.address;
-      if (updates.policyNumber !== undefined) dbUpdates.policy_number = updates.policyNumber;
-      if (updates.insuranceCompany !== undefined) dbUpdates.insurance_company = updates.insuranceCompany;
-      if (updates.policyType !== undefined) dbUpdates.policy_type = updates.policyType;
-      if (updates.premiumAmount !== undefined) dbUpdates.premium_amount = updates.premiumAmount;
-      if (updates.coverageAmount !== undefined) dbUpdates.coverage_amount = updates.coverageAmount;
-      if (updates.policyStartDate !== undefined) dbUpdates.policy_start_date = updates.policyStartDate;
-      if (updates.policyEndDate !== undefined) dbUpdates.policy_end_date = updates.policyEndDate;
-      if (updates.premiumDueDate !== undefined) dbUpdates.premium_due_date = updates.premiumDueDate;
+      if (updates.policyNumber !== undefined) dbUpdates.policyNumber = updates.policyNumber;
+      if (updates.insuranceCompany !== undefined) dbUpdates.insuranceCompany = updates.insuranceCompany;
+      if (updates.policyType !== undefined) dbUpdates.policyType = updates.policyType;
+      if (updates.premiumAmount !== undefined) dbUpdates.premiumAmount = updates.premiumAmount;
+      if (updates.coverageAmount !== undefined) dbUpdates.coverageAmount = updates.coverageAmount;
+      if (updates.policyStartDate !== undefined) dbUpdates.policyStartDate = toISOString(updates.policyStartDate as Date | undefined);
+      if (updates.policyEndDate !== undefined) dbUpdates.policyEndDate = toISOString(updates.policyEndDate as Date | undefined);
+      if (updates.premiumDueDate !== undefined) dbUpdates.premiumDueDate = toISOString(updates.premiumDueDate as Date | undefined);
       if (updates.status !== undefined) dbUpdates.status = updates.status;
-      if (updates.paymentFrequency !== undefined) dbUpdates.payment_frequency = updates.paymentFrequency;
-      if (updates.nomineeName !== undefined) dbUpdates.nominee_name = updates.nomineeName;
-      if (updates.nomineeRelationship !== undefined) dbUpdates.nominee_relationship = updates.nomineeRelationship;
+      if (updates.paymentFrequency !== undefined) dbUpdates.paymentFrequency = updates.paymentFrequency;
+      if (updates.nomineeName !== undefined) dbUpdates.nomineeName = updates.nomineeName;
+      if (updates.nomineeRelationship !== undefined) dbUpdates.nomineeRelationship = updates.nomineeRelationship;
       if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
       if (updates.documents !== undefined) dbUpdates.documents = updates.documents;
 
-      const { error } = await supabase
-        .from('policies')
-        .update(dbUpdates)
-        .eq('id', id);
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
+      await updateDoc(doc(db, COLLECTIONS.POLICIES, id), dbUpdates);
 
       console.log(`Policy updated with ID: ${id}`);
 
@@ -239,60 +251,25 @@ export const policyService = {
   deletePolicy: async (id: string, userId?: string, userDisplayName?: string): Promise<void> => {
     try {
       // First, get the policy data
-      const { data: policyData, error: fetchError } = await supabase
-        .from('policies')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const policyDocRef = doc(db, COLLECTIONS.POLICIES, id);
+      const policyDoc = await getDoc(policyDocRef);
 
-      if (fetchError || !policyData) {
+      if (!policyDoc.exists()) {
         throw new Error('Policy not found');
       }
 
-      // Insert into deleted_policies table
-      const { error: insertError } = await supabase
-        .from('deleted_policies')
-        .insert([{
-          original_policy_id: id,
-          user_id: policyData.user_id,
-          policyholder_name: policyData.policyholder_name,
-          contact_no: policyData.contact_no,
-          email_id: policyData.email_id,
-          address: policyData.address,
-          policy_number: policyData.policy_number,
-          insurance_company: policyData.insurance_company,
-          policy_type: policyData.policy_type,
-          premium_amount: policyData.premium_amount,
-          coverage_amount: policyData.coverage_amount,
-          policy_start_date: policyData.policy_start_date,
-          policy_end_date: policyData.policy_end_date,
-          premium_due_date: policyData.premium_due_date,
-          status: policyData.status,
-          payment_frequency: policyData.payment_frequency,
-          nominee_name: policyData.nominee_name,
-          nominee_relationship: policyData.nominee_relationship,
-          notes: policyData.notes,
-          documents: policyData.documents,
-          deleted_by: userId,
-          created_at: policyData.created_at,
-          updated_at: policyData.updated_at,
-        }]);
+      const policyData = policyDoc.data();
 
-      if (insertError) {
-        console.error('Supabase error inserting deleted policy:', insertError);
-        throw insertError;
-      }
+      // Insert into deleted_policies collection
+      await setDoc(doc(db, COLLECTIONS.DELETED_POLICIES, id), {
+        ...policyData,
+        originalPolicyId: id,
+        deletedBy: userId,
+        deletedAt: new Date().toISOString(),
+      });
 
-      // Delete from policies table
-      const { error: deleteError } = await supabase
-        .from('policies')
-        .delete()
-        .eq('id', id);
-
-      if (deleteError) {
-        console.error('Supabase error deleting policy:', deleteError);
-        throw deleteError;
-      }
+      // Delete from policies collection
+      await deleteDoc(policyDocRef);
 
       console.log(`Policy soft deleted with ID: ${id}`);
 
@@ -300,8 +277,8 @@ export const policyService = {
       await activityLogService.createActivityLog(
         'DELETE',
         id,
-        policyData.policyholder_name,
-        `Policy deleted for ${policyData.policyholder_name}${userDisplayName ? ` by ${userDisplayName}` : ''}`,
+        policyData.policyholderName,
+        `Policy deleted for ${policyData.policyholderName}${userDisplayName ? ` by ${userDisplayName}` : ''}`,
         userId,
         userDisplayName
       );
@@ -314,46 +291,36 @@ export const policyService = {
   // Get single policy by ID
   getPolicyById: async (id: string): Promise<Policy | null> => {
     try {
-      const { data, error } = await supabase
-        .from('policies')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const policyDoc = await getDoc(doc(db, COLLECTIONS.POLICIES, id));
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          // No rows returned
-          return null;
-        }
-        throw error;
+      if (!policyDoc.exists()) {
+        return null;
       }
 
-      if (!data) return null;
-
-      // Convert snake_case to camelCase
+      const data = policyDoc.data();
       return {
-        id: data.id,
-        userId: data.user_id,
-        policyholderName: data.policyholder_name,
-        contactNo: data.contact_no,
-        emailId: data.email_id,
+        id: policyDoc.id,
+        userId: data.userId,
+        policyholderName: data.policyholderName,
+        contactNo: data.contactNo,
+        emailId: data.emailId,
         address: data.address,
-        policyNumber: data.policy_number,
-        insuranceCompany: data.insurance_company,
-        policyType: data.policy_type,
-        premiumAmount: data.premium_amount,
-        coverageAmount: data.coverage_amount,
-        policyStartDate: data.policy_start_date ? new Date(data.policy_start_date) : undefined,
-        policyEndDate: data.policy_end_date ? new Date(data.policy_end_date) : undefined,
-        premiumDueDate: data.premium_due_date ? new Date(data.premium_due_date) : undefined,
+        policyNumber: data.policyNumber,
+        insuranceCompany: data.insuranceCompany,
+        policyType: data.policyType,
+        premiumAmount: data.premiumAmount,
+        coverageAmount: data.coverageAmount,
+        policyStartDate: toDate(data.policyStartDate),
+        policyEndDate: toDate(data.policyEndDate),
+        premiumDueDate: toDate(data.premiumDueDate),
         status: data.status,
-        paymentFrequency: data.payment_frequency,
-        nomineeName: data.nominee_name,
-        nomineeRelationship: data.nominee_relationship,
+        paymentFrequency: data.paymentFrequency,
+        nomineeName: data.nomineeName,
+        nomineeRelationship: data.nomineeRelationship,
         notes: data.notes,
         documents: data.documents || [],
-        createdAt: new Date(data.created_at),
-        updatedAt: new Date(data.updated_at),
+        createdAt: toDate(data.createdAt) || new Date(),
+        updatedAt: toDate(data.updatedAt) || new Date(),
       };
     } catch (error) {
       console.error('Error getting policy by ID:', error);

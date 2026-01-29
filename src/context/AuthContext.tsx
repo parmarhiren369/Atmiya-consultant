@@ -1,8 +1,7 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { AppUser, LoginCredentials, TeamMember } from '../types';
-import { supabaseAuthService } from '../services/supabaseAuthService';
+import { firebaseAuthService } from '../services/firebaseAuthService';
 import { teamMemberService } from '../services/teamMemberService';
-import { supabase } from '../config/supabase';
 import toast from 'react-hot-toast';
 
 interface AuthContextType {
@@ -35,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         });
 
         const currentUser = await Promise.race([
-          supabaseAuthService.getCurrentUser(),
+          firebaseAuthService.getCurrentUser(),
           timeoutPromise
         ]);
         
@@ -52,46 +51,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initializeAuth();
 
-    // Listen for auth state changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state change:', event);
+    // Listen for Firebase auth state changes
+    const unsubscribe = firebaseAuthService.onAuthStateChange(async (firebaseUser) => {
+      console.log('Auth state change:', firebaseUser ? 'signed in' : 'signed out');
       
-      if (event === 'SIGNED_IN' && session) {
-        const timeoutPromise = new Promise<null>((resolve) => {
-          setTimeout(() => resolve(null), 3000);
-        });
-        
-        const currentUser = await Promise.race([
-          supabaseAuthService.getCurrentUser(),
-          timeoutPromise
-        ]);
-        
-        // Only set user if we got a valid user object
-        if (currentUser) {
-          setUser(currentUser);
+      if (firebaseUser) {
+        try {
+          const currentUser = await firebaseAuthService.getCurrentUser();
+          if (currentUser) {
+            setUser(currentUser);
+            setEffectiveUserId(currentUser.id);
+          }
+        } catch (error) {
+          console.error('Error fetching user profile:', error);
         }
         setLoading(false);
-      } else if (event === 'SIGNED_OUT') {
+      } else {
         setUser(null);
+        setEffectiveUserId(null);
         setLoading(false);
-      } else if (event === 'TOKEN_REFRESHED') {
-        // Token refreshed successfully, re-fetch user
-        console.log('Token refreshed, re-fetching user');
-        const currentUser = await supabaseAuthService.getCurrentUser();
-        if (currentUser) {
-          setUser(currentUser);
-        }
-      } else if (event === 'USER_UPDATED') {
-        // User data updated, refresh
-        const currentUser = await supabaseAuthService.getCurrentUser();
-        if (currentUser) {
-          setUser(currentUser);
-        }
       }
     });
 
     return () => {
-      subscription.unsubscribe();
+      unsubscribe();
     };
   }, []);
 
@@ -126,7 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       
       // If not a team member, try regular user authentication
-      const { user: authenticatedUser, error } = await supabaseAuthService.signin(credentials);
+      const { user: authenticatedUser, error } = await firebaseAuthService.signin(credentials);
       
       if (error) {
         toast.error(error);
@@ -146,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           toast.success(`Welcome back, ${authenticatedUser.displayName}!`);
           
           // Show subscription warning if needed
-          const daysRemaining = supabaseAuthService.getDaysRemaining(authenticatedUser);
+          const daysRemaining = firebaseAuthService.getDaysRemaining(authenticatedUser);
           if (daysRemaining <= 5 && daysRemaining > 0) {
             setTimeout(() => {
               toast(
@@ -173,7 +156,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setEffectiveUserId(null);
       } else {
         // Regular user logout
-        await supabaseAuthService.signout();
+        await firebaseAuthService.signout();
         setUser(null);
         setEffectiveUserId(null);
       }

@@ -1,0 +1,42 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the file path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // User-specific storage paths
+    // Pattern: /{userId}/{bucket}/{...path}
+    match /{userId}/{allPaths=**} {
+      // Allow read if user owns the path
+      allow read: if isOwner(userId);
+      
+      // Allow write if user owns the path
+      allow write: if isOwner(userId);
+      
+      // File size limit: 10MB
+      allow create: if isOwner(userId) && 
+        request.resource.size < 10 * 1024 * 1024;
+      
+      // Allow updates (like metadata changes)
+      allow update: if isOwner(userId);
+      
+      // Allow delete
+      allow delete: if isOwner(userId);
+    }
+    
+    // Public assets (if needed)
+    match /public/{allPaths=**} {
+      allow read: if true;
+      allow write: if false; // Only admins via Firebase Admin SDK
+    }
+  }
+}
+

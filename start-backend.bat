@@ -14,8 +14,9 @@ if not exist .env.backend (
     echo   RAZORPAY_KEY_ID=your_razorpay_key_id
     echo   RAZORPAY_KEY_SECRET=your_razorpay_key_secret
     echo   RAZORPAY_WEBHOOK_SECRET=your_webhook_secret
-    echo   SUPABASE_URL=https://your-project.supabase.co
-    echo   SUPABASE_SERVICE_KEY=your_service_key
+    echo   FIREBASE_PROJECT_ID=your_firebase_project_id
+    echo   FIREBASE_CLIENT_EMAIL=your_service_account_email
+    echo   FIREBASE_PRIVATE_KEY=your_private_key
     echo.
     echo See env.backend.example for reference.
     echo.
@@ -32,13 +33,13 @@ echo.
 echo Configuration:
 echo - Port: %PORT%
 echo - Razorpay Key: %RAZORPAY_KEY_ID%
-echo - Supabase URL: %SUPABASE_URL%
+echo - Firebase Project: %FIREBASE_PROJECT_ID%
 echo.
 
-if "%SUPABASE_SERVICE_KEY%"=="" (
-    echo ERROR: Supabase Service Key not configured!
+if "%FIREBASE_PROJECT_ID%"=="" (
+    echo ERROR: Firebase Project ID not configured!
     echo.
-    echo Please edit .env.backend and add your Supabase Service Key
+    echo Please edit .env.backend and add your Firebase credentials
     echo.
     pause
     exit /b 1

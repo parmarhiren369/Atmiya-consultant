@@ -1,6 +1,25 @@
-import { supabase } from '../config/supabase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  Timestamp
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 import { Lead, LeadFormData, FollowUpHistory } from '../types';
-import { activityLogService } from './activityLogService';
+
+// Helper to convert Firestore Timestamp to Date
+const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => {
+  if (!timestamp) return undefined;
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  return new Date(timestamp);
+};
 
 export const leadService = {
   // Get all leads (optionally filtered by userId)
@@ -8,44 +27,47 @@ export const leadService = {
     try {
       console.log('Fetching leads for userId:', userId);
       
-      let query = supabase
-        .from('leads')
-        .select('*')
-        .order('created_at', { ascending: false });
-
+      let q;
       if (userId) {
-        query = query.eq('user_id', userId);
+        q = query(
+          collection(db, COLLECTIONS.LEADS),
+          where('userId', '==', userId),
+          orderBy('createdAt', 'desc')
+        );
+      } else {
+        q = query(
+          collection(db, COLLECTIONS.LEADS),
+          orderBy('createdAt', 'desc')
+        );
       }
 
-      const { data, error } = await query;
+      const querySnapshot = await getDocs(q);
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      // Convert snake_case to camelCase
-      const leads: Lead[] = (data || []).map(row => ({
-        id: row.id,
-        userId: row.user_id,
-        customerName: row.customer_name,
-        customerMobile: row.customer_mobile,
-        customerEmail: row.customer_email,
-        productType: row.product_type,
-        followUpDate: row.follow_up_date ? new Date(row.follow_up_date) : new Date(),
-        status: row.status,
-        leadSource: row.lead_source,
-        remark: row.remark,
-        nextFollowUpDate: row.next_follow_up_date ? new Date(row.next_follow_up_date) : undefined,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-        assignedTo: row.assigned_to,
-        assignedToName: row.assigned_to_name,
-        priority: row.priority,
-        estimatedValue: row.estimated_value,
-        convertedToPolicyId: row.converted_to_policy_id,
-        isConverted: row.is_converted,
-      }));
+      const leads: Lead[] = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          userId: data.userId,
+          customerName: data.customerName,
+          customerMobile: data.customerMobile,
+          customerEmail: data.customerEmail,
+          productType: data.productType,
+          followUpDate: toDate(data.followUpDate) || new Date(),
+          status: data.status,
+          leadSource: data.leadSource,
+          remark: data.remark,
+          nextFollowUpDate: toDate(data.nextFollowUpDate),
+          createdAt: toDate(data.createdAt) || new Date(),
+          updatedAt: toDate(data.updatedAt) || new Date(),
+          assignedTo: data.assignedTo,
+          assignedToName: data.assignedToName,
+          assigned_to_team_member_id: data.assignedToTeamMemberId,
+          priority: data.priority,
+          estimatedValue: data.estimatedValue,
+          convertedToPolicyId: data.convertedToPolicyId,
+          isConverted: data.isConverted,
+        };
+      });
 
       return leads;
     } catch (error) {
@@ -57,36 +79,31 @@ export const leadService = {
   // Get a single lead by ID
   getLeadById: async (id: string): Promise<Lead | null> => {
     try {
-      const { data, error } = await supabase
-        .from('leads')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const leadDoc = await getDoc(doc(db, COLLECTIONS.LEADS, id));
 
-      if (error) throw error;
+      if (!leadDoc.exists()) return null;
 
-      if (!data) return null;
-
+      const data = leadDoc.data();
       return {
-        id: data.id,
-        userId: data.user_id,
-        customerName: data.customer_name,
-        customerMobile: data.customer_mobile,
-        customerEmail: data.customer_email,
-        productType: data.product_type,
-        followUpDate: data.follow_up_date ? new Date(data.follow_up_date) : new Date(),
+        id: leadDoc.id,
+        userId: data.userId,
+        customerName: data.customerName,
+        customerMobile: data.customerMobile,
+        customerEmail: data.customerEmail,
+        productType: data.productType,
+        followUpDate: toDate(data.followUpDate) || new Date(),
         status: data.status,
-        leadSource: data.lead_source,
+        leadSource: data.leadSource,
         remark: data.remark,
-        nextFollowUpDate: data.next_follow_up_date ? new Date(data.next_follow_up_date) : undefined,
-        createdAt: new Date(data.created_at),
-        updatedAt: new Date(data.updated_at),
-        assignedTo: data.assigned_to,
-        assignedToName: data.assigned_to_name,
+        nextFollowUpDate: toDate(data.nextFollowUpDate),
+        createdAt: toDate(data.createdAt) || new Date(),
+        updatedAt: toDate(data.updatedAt) || new Date(),
+        assignedTo: data.assignedTo,
+        assignedToName: data.assignedToName,
         priority: data.priority,
-        estimatedValue: data.estimated_value,
-        convertedToPolicyId: data.converted_to_policy_id,
-        isConverted: data.is_converted,
+        estimatedValue: data.estimatedValue,
+        convertedToPolicyId: data.convertedToPolicyId,
+        isConverted: data.isConverted,
       };
     } catch (error) {
       console.error('Error in getLeadById:', error);
@@ -97,63 +114,47 @@ export const leadService = {
   // Create a new lead
   createLead: async (leadData: LeadFormData, userId: string, userDisplayName: string): Promise<Lead> => {
     try {
-      // Convert to snake_case for database
-      const dbData = {
-        user_id: userId,
-        customer_name: leadData.customerName,
-        customer_mobile: leadData.customerMobile,
-        customer_email: leadData.customerEmail,
-        product_type: leadData.productType,
-        follow_up_date: leadData.followUpDate,
-        status: leadData.status || 'new',
-        lead_source: leadData.leadSource,
-        remark: leadData.remark,
-        next_follow_up_date: leadData.nextFollowUpDate,
+      const now = new Date().toISOString();
+      const dbLead = {
+        userId: userId,
+        customerName: leadData.customerName,
+        customerMobile: leadData.customerMobile,
+        customerEmail: leadData.customerEmail,
+        productType: leadData.productType,
+        followUpDate: leadData.followUpDate,
+        status: leadData.status,
+        leadSource: leadData.leadSource,
+        remark: leadData.remark || null,
+        nextFollowUpDate: leadData.nextFollowUpDate || null,
         priority: leadData.priority || 'medium',
-        estimated_value: leadData.estimatedValue,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        estimatedValue: leadData.estimatedValue || null,
+        isConverted: false,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: userId,
+        createdByName: userDisplayName,
       };
 
-      const { data, error } = await supabase
-        .from('leads')
-        .insert(dbData)
-        .select()
-        .single();
+      const docRef = await addDoc(collection(db, COLLECTIONS.LEADS), dbLead);
 
-      if (error) throw error;
-
-      const newLead: Lead = {
-        id: data.id,
-        userId: data.user_id,
-        customerName: data.customer_name,
-        customerMobile: data.customer_mobile,
-        customerEmail: data.customer_email,
-        productType: data.product_type,
-        followUpDate: new Date(data.follow_up_date),
-        status: data.status,
-        leadSource: data.lead_source,
-        remark: data.remark,
-        nextFollowUpDate: data.next_follow_up_date ? new Date(data.next_follow_up_date) : undefined,
-        createdAt: new Date(data.created_at),
-        updatedAt: new Date(data.updated_at),
-        priority: data.priority,
-        estimatedValue: data.estimated_value,
+      return {
+        id: docRef.id,
+        userId: userId,
+        customerName: leadData.customerName,
+        customerMobile: leadData.customerMobile,
+        customerEmail: leadData.customerEmail,
+        productType: leadData.productType,
+        followUpDate: new Date(leadData.followUpDate),
+        status: leadData.status,
+        leadSource: leadData.leadSource,
+        remark: leadData.remark,
+        nextFollowUpDate: leadData.nextFollowUpDate ? new Date(leadData.nextFollowUpDate) : undefined,
+        priority: leadData.priority,
+        estimatedValue: leadData.estimatedValue,
+        isConverted: false,
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
       };
-
-      // Log the activity
-      await activityLogService.createActivityLog(
-        'CREATE',
-        newLead.id,
-        newLead.customerName,
-        `Lead created for ${newLead.customerName}`,
-        userId,
-        userDisplayName,
-        undefined,
-        newLead as any
-      );
-
-      return newLead;
     } catch (error) {
       console.error('Error in createLead:', error);
       throw error;
@@ -161,70 +162,25 @@ export const leadService = {
   },
 
   // Update a lead
-  updateLead: async (id: string, leadData: Partial<LeadFormData>, userId: string, userDisplayName: string): Promise<Lead> => {
+  updateLead: async (id: string, updates: Partial<LeadFormData>): Promise<void> => {
     try {
-      // Get old data for activity log
-      const oldLead = await leadService.getLeadById(id);
-
-      // Convert to snake_case for database
-      const dbData: Record<string, any> = {
-        updated_at: new Date().toISOString(),
+      const dbUpdates: Record<string, unknown> = {
+        updatedAt: new Date().toISOString()
       };
 
-      if (leadData.customerName !== undefined) dbData.customer_name = leadData.customerName;
-      if (leadData.customerMobile !== undefined) dbData.customer_mobile = leadData.customerMobile;
-      if (leadData.customerEmail !== undefined) dbData.customer_email = leadData.customerEmail;
-      if (leadData.productType !== undefined) dbData.product_type = leadData.productType;
-      if (leadData.followUpDate !== undefined) dbData.follow_up_date = leadData.followUpDate;
-      if (leadData.status !== undefined) dbData.status = leadData.status;
-      if (leadData.leadSource !== undefined) dbData.lead_source = leadData.leadSource;
-      if (leadData.remark !== undefined) dbData.remark = leadData.remark;
-      if (leadData.nextFollowUpDate !== undefined) dbData.next_follow_up_date = leadData.nextFollowUpDate;
-      if (leadData.priority !== undefined) dbData.priority = leadData.priority;
-      if (leadData.estimatedValue !== undefined) dbData.estimated_value = leadData.estimatedValue;
+      if (updates.customerName !== undefined) dbUpdates.customerName = updates.customerName;
+      if (updates.customerMobile !== undefined) dbUpdates.customerMobile = updates.customerMobile;
+      if (updates.customerEmail !== undefined) dbUpdates.customerEmail = updates.customerEmail;
+      if (updates.productType !== undefined) dbUpdates.productType = updates.productType;
+      if (updates.followUpDate !== undefined) dbUpdates.followUpDate = updates.followUpDate;
+      if (updates.status !== undefined) dbUpdates.status = updates.status;
+      if (updates.leadSource !== undefined) dbUpdates.leadSource = updates.leadSource;
+      if (updates.remark !== undefined) dbUpdates.remark = updates.remark;
+      if (updates.nextFollowUpDate !== undefined) dbUpdates.nextFollowUpDate = updates.nextFollowUpDate;
+      if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
+      if (updates.estimatedValue !== undefined) dbUpdates.estimatedValue = updates.estimatedValue;
 
-      const { data, error } = await supabase
-        .from('leads')
-        .update(dbData)
-        .eq('id', id)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const updatedLead: Lead = {
-        id: data.id,
-        userId: data.user_id,
-        customerName: data.customer_name,
-        customerMobile: data.customer_mobile,
-        customerEmail: data.customer_email,
-        productType: data.product_type,
-        followUpDate: new Date(data.follow_up_date),
-        status: data.status,
-        leadSource: data.lead_source,
-        remark: data.remark,
-        nextFollowUpDate: data.next_follow_up_date ? new Date(data.next_follow_up_date) : undefined,
-        createdAt: new Date(data.created_at),
-        updatedAt: new Date(data.updated_at),
-        priority: data.priority,
-        estimatedValue: data.estimated_value,
-        convertedToPolicyId: data.converted_to_policy_id,
-        isConverted: data.is_converted,
-      };
-
-      // Log the activity
-      await activityLogService.createActivityLog(
-        'UPDATE',
-        updatedLead.id,
-        updatedLead.customerName,
-        `Lead updated for ${updatedLead.customerName}`,
-        userId,
-        userDisplayName,
-        oldLead as any,
-        updatedLead as any
-      );
-
-      return updatedLead;
+      await updateDoc(doc(db, COLLECTIONS.LEADS, id), dbUpdates);
     } catch (error) {
       console.error('Error in updateLead:', error);
       throw error;
@@ -232,227 +188,99 @@ export const leadService = {
   },
 
   // Delete a lead
-  deleteLead: async (id: string, userId: string, userDisplayName: string): Promise<void> => {
+  deleteLead: async (id: string): Promise<void> => {
     try {
-      // Get lead data for activity log
-      const lead = await leadService.getLeadById(id);
-
-      const { error } = await supabase
-        .from('leads')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-
-      // Log the activity
-      if (lead) {
-        await activityLogService.createActivityLog(
-          'DELETE',
-          id,
-          lead.customerName,
-          `Lead deleted for ${lead.customerName}`,
-          userId,
-          userDisplayName,
-          lead as any,
-          undefined
-        );
-      }
+      await deleteDoc(doc(db, COLLECTIONS.LEADS, id));
     } catch (error) {
       console.error('Error in deleteLead:', error);
       throw error;
     }
   },
 
-  // Get leads by status
-  getLeadsByStatus: async (status: Lead['status'], userId?: string): Promise<Lead[]> => {
-    try {
-      let query = supabase
-        .from('leads')
-        .select('*')
-        .eq('status', status)
-        .order('created_at', { ascending: false });
-
-      if (userId) {
-        query = query.eq('user_id', userId);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
-      return (data || []).map(row => ({
-        id: row.id,
-        userId: row.user_id,
-        customerName: row.customer_name,
-        customerMobile: row.customer_mobile,
-        customerEmail: row.customer_email,
-        productType: row.product_type,
-        followUpDate: new Date(row.follow_up_date),
-        status: row.status,
-        leadSource: row.lead_source,
-        remark: row.remark,
-        nextFollowUpDate: row.next_follow_up_date ? new Date(row.next_follow_up_date) : undefined,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-        assignedTo: row.assigned_to,
-        assignedToName: row.assigned_to_name,
-        priority: row.priority,
-        estimatedValue: row.estimated_value,
-        convertedToPolicyId: row.converted_to_policy_id,
-        isConverted: row.is_converted,
-      }));
-    } catch (error) {
-      console.error('Error in getLeadsByStatus:', error);
-      throw error;
-    }
-  },
-
-  // Get leads with upcoming follow-ups
-  getUpcomingFollowUps: async (userId?: string, days: number = 7): Promise<Lead[]> => {
+  // Get leads for follow-up today
+  getFollowUpLeads: async (userId?: string): Promise<Lead[]> => {
     try {
       const today = new Date();
-      const futureDate = new Date(today.getTime() + days * 24 * 60 * 60 * 1000);
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
 
-      let query = supabase
-        .from('leads')
-        .select('*')
-        .gte('next_follow_up_date', today.toISOString())
-        .lte('next_follow_up_date', futureDate.toISOString())
-        .order('next_follow_up_date', { ascending: true });
-
+      let q;
       if (userId) {
-        query = query.eq('user_id', userId);
-      }
-
-      const { data, error } = await query;
-
-      if (error) throw error;
-
-      return (data || []).map(row => ({
-        id: row.id,
-        userId: row.user_id,
-        customerName: row.customer_name,
-        customerMobile: row.customer_mobile,
-        customerEmail: row.customer_email,
-        productType: row.product_type,
-        followUpDate: new Date(row.follow_up_date),
-        status: row.status,
-        leadSource: row.lead_source,
-        remark: row.remark,
-        nextFollowUpDate: row.next_follow_up_date ? new Date(row.next_follow_up_date) : undefined,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-        assignedTo: row.assigned_to,
-        assignedToName: row.assigned_to_name,
-        priority: row.priority,
-        estimatedValue: row.estimated_value,
-        convertedToPolicyId: row.converted_to_policy_id,
-        isConverted: row.is_converted,
-      }));
-    } catch (error) {
-      console.error('Error in getUpcomingFollowUps:', error);
-      throw error;
-    }
-  },
-
-  // Convert lead to policy
-  convertLeadToPolicy: async (leadId: string, policyId: string, userId: string, userDisplayName: string): Promise<void> => {
-    try {
-      const { error } = await supabase
-        .from('leads')
-        .update({
-          is_converted: true,
-          converted_to_policy_id: policyId,
-          status: 'won',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', leadId);
-
-      if (error) throw error;
-
-      const lead = await leadService.getLeadById(leadId);
-
-      if (lead) {
-        await activityLogService.createActivityLog(
-          'UPDATE',
-          leadId,
-          lead.customerName,
-          `Lead converted to policy for ${lead.customerName}`,
-          userId,
-          userDisplayName,
-          undefined,
-          lead as any
+        q = query(
+          collection(db, COLLECTIONS.LEADS),
+          where('userId', '==', userId),
+          where('nextFollowUpDate', '>=', today.toISOString()),
+          where('nextFollowUpDate', '<', tomorrow.toISOString())
+        );
+      } else {
+        q = query(
+          collection(db, COLLECTIONS.LEADS),
+          where('nextFollowUpDate', '>=', today.toISOString()),
+          where('nextFollowUpDate', '<', tomorrow.toISOString())
         );
       }
+
+      const querySnapshot = await getDocs(q);
+
+      return querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          userId: data.userId,
+          customerName: data.customerName,
+          customerMobile: data.customerMobile,
+          customerEmail: data.customerEmail,
+          productType: data.productType,
+          followUpDate: toDate(data.followUpDate) || new Date(),
+          status: data.status,
+          leadSource: data.leadSource,
+          remark: data.remark,
+          nextFollowUpDate: toDate(data.nextFollowUpDate),
+          createdAt: toDate(data.createdAt) || new Date(),
+          updatedAt: toDate(data.updatedAt) || new Date(),
+          priority: data.priority,
+          estimatedValue: data.estimatedValue,
+        };
+      });
     } catch (error) {
-      console.error('Error in convertLeadToPolicy:', error);
-      throw error;
-    }
-  },
-
-  // Get lead statistics
-  getLeadStatistics: async (userId?: string): Promise<{
-    total: number;
-    new: number;
-    followUp: number;
-    won: number;
-    lost: number;
-    conversionRate: number;
-  }> => {
-    try {
-      const leads = await leadService.getLeads(userId);
-
-      const stats = {
-        total: leads.length,
-        new: leads.filter(l => l.status === 'new').length,
-        followUp: leads.filter(l => l.status === 'follow_up').length,
-        won: leads.filter(l => l.status === 'won').length,
-        lost: leads.filter(l => l.status === 'lost' || l.status === 'canceled').length,
-        conversionRate: 0,
-      };
-
-      if (stats.total > 0) {
-        stats.conversionRate = (stats.won / stats.total) * 100;
-      }
-
-      return stats;
-    } catch (error) {
-      console.error('Error in getLeadStatistics:', error);
+      console.error('Error in getFollowUpLeads:', error);
       throw error;
     }
   },
 
   // Add follow-up history
-  addFollowUpHistory: async (leadId: string, historyData: Omit<FollowUpHistory, 'id' | 'createdAt'>): Promise<FollowUpHistory> => {
+  addFollowUpHistory: async (
+    leadId: string, 
+    historyData: Omit<FollowUpHistory, 'id' | 'createdAt'>
+  ): Promise<FollowUpHistory> => {
     try {
-      const { data, error } = await supabase
-        .from('lead_follow_up_history')
-        .insert({
-          lead_id: leadId,
-          follow_up_date: historyData.followUpDate,
-          actual_follow_up_date: historyData.actualFollowUpDate,
-          status: historyData.status,
-          notes: historyData.notes,
-          next_follow_up_date: historyData.nextFollowUpDate,
-          created_by: historyData.createdBy,
-          created_by_name: historyData.createdByName,
-        })
-        .select()
-        .single();
+      const now = new Date().toISOString();
+      const dbHistory = {
+        leadId,
+        followUpDate: historyData.followUpDate,
+        actualFollowUpDate: historyData.actualFollowUpDate,
+        status: historyData.status,
+        notes: historyData.notes,
+        nextFollowUpDate: historyData.nextFollowUpDate || null,
+        createdBy: historyData.createdBy,
+        createdByName: historyData.createdByName,
+        createdAt: now,
+      };
 
-      if (error) throw error;
+      const docRef = await addDoc(collection(db, COLLECTIONS.FOLLOW_UP_HISTORY), dbHistory);
 
       return {
-        id: data.id,
-        leadId: data.lead_id,
-        followUpDate: data.follow_up_date,
-        actualFollowUpDate: data.actual_follow_up_date,
-        status: data.status,
-        notes: data.notes,
-        nextFollowUpDate: data.next_follow_up_date,
-        createdBy: data.created_by,
-        createdByName: data.created_by_name,
-        createdAt: new Date(data.created_at),
+        id: docRef.id,
+        leadId,
+        followUpDate: new Date(historyData.followUpDate as string),
+        actualFollowUpDate: new Date(historyData.actualFollowUpDate as string),
+        status: historyData.status,
+        notes: historyData.notes,
+        nextFollowUpDate: historyData.nextFollowUpDate ? new Date(historyData.nextFollowUpDate as string) : undefined,
+        createdBy: historyData.createdBy,
+        createdByName: historyData.createdByName,
+        createdAt: new Date(now),
       };
     } catch (error) {
       console.error('Error in addFollowUpHistory:', error);
@@ -463,28 +291,46 @@ export const leadService = {
   // Get follow-up history for a lead
   getFollowUpHistory: async (leadId: string): Promise<FollowUpHistory[]> => {
     try {
-      const { data, error } = await supabase
-        .from('lead_follow_up_history')
-        .select('*')
-        .eq('lead_id', leadId)
-        .order('created_at', { ascending: false });
+      const q = query(
+        collection(db, COLLECTIONS.FOLLOW_UP_HISTORY),
+        where('leadId', '==', leadId),
+        orderBy('createdAt', 'desc')
+      );
 
-      if (error) throw error;
+      const querySnapshot = await getDocs(q);
 
-      return (data || []).map(row => ({
-        id: row.id,
-        leadId: row.lead_id,
-        followUpDate: row.follow_up_date,
-        actualFollowUpDate: row.actual_follow_up_date,
-        status: row.status,
-        notes: row.notes,
-        nextFollowUpDate: row.next_follow_up_date,
-        createdBy: row.created_by,
-        createdByName: row.created_by_name,
-        createdAt: new Date(row.created_at),
-      }));
+      return querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          leadId: data.leadId,
+          followUpDate: toDate(data.followUpDate) || new Date(),
+          actualFollowUpDate: toDate(data.actualFollowUpDate) || new Date(),
+          status: data.status,
+          notes: data.notes,
+          nextFollowUpDate: toDate(data.nextFollowUpDate),
+          createdBy: data.createdBy,
+          createdByName: data.createdByName,
+          createdAt: toDate(data.createdAt) || new Date(),
+        };
+      });
     } catch (error) {
       console.error('Error in getFollowUpHistory:', error);
+      throw error;
+    }
+  },
+
+  // Mark lead as converted
+  markAsConverted: async (leadId: string, policyId: string): Promise<void> => {
+    try {
+      await updateDoc(doc(db, COLLECTIONS.LEADS, leadId), {
+        isConverted: true,
+        convertedToPolicyId: policyId,
+        status: 'won',
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('Error in markAsConverted:', error);
       throw error;
     }
   },

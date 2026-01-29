@@ -1,4 +1,15 @@
-import { supabase } from '../config/supabase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  addDoc, 
+  query, 
+  where, 
+  orderBy,
+  limit as firestoreLimit,
+  Timestamp
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 
 export interface ActivityLog {
   id: string;
@@ -13,6 +24,13 @@ export interface ActivityLog {
   createdAt: Date;
   metadata?: Record<string, unknown>;
 }
+
+// Helper to convert Firestore Timestamp to Date
+const toDate = (timestamp: Timestamp | string | undefined): Date => {
+  if (!timestamp) return new Date();
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  return new Date(timestamp);
+};
 
 export const activityLogService = {
   // Create a new activity log
@@ -31,27 +49,20 @@ export const activityLogService = {
       if (oldData) metadata.oldData = oldData;
       if (newData) metadata.newData = newData;
 
-      const { data, error } = await supabase
-        .from('activity_logs')
-        .insert([{
-          user_id: userId,
-          action,
-          policy_id: policyId,
-          policyholder_name: policyholderName,
-          description: description || `${action} action performed`,
-          performed_by: userId,
-          performed_by_name: userDisplayName,
-          metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
-        }])
-        .select()
-        .single();
+      const logData = {
+        userId: userId || null,
+        action,
+        policyId: policyId || null,
+        policyholderName: policyholderName || null,
+        description: description || `${action} action performed`,
+        performedBy: userId || null,
+        performedByName: userDisplayName || null,
+        metadata: Object.keys(metadata).length > 0 ? metadata : null,
+        createdAt: new Date().toISOString(),
+      };
 
-      if (error) {
-        console.error('Supabase error creating activity log:', error);
-        throw error;
-      }
-
-      return data.id;
+      const docRef = await addDoc(collection(db, COLLECTIONS.ACTIVITY_LOGS), logData);
+      return docRef.id;
     } catch (error) {
       console.error('Error creating activity log:', error);
       // Don't throw - activity logs are not critical
@@ -62,40 +73,41 @@ export const activityLogService = {
   // Get activity logs (optionally limited and filtered by userId)
   getActivityLogs: async (limit?: number, userId?: string): Promise<ActivityLog[]> => {
     try {
-      let query = supabase
-        .from('activity_logs')
-        .select('*')
-        .order('created_at', { ascending: false });
-
+      let q;
+      
       if (userId) {
-        query = query.eq('user_id', userId);
+        q = query(
+          collection(db, COLLECTIONS.ACTIVITY_LOGS),
+          where('userId', '==', userId),
+          orderBy('createdAt', 'desc'),
+          ...(limit ? [firestoreLimit(limit)] : [])
+        );
+      } else {
+        q = query(
+          collection(db, COLLECTIONS.ACTIVITY_LOGS),
+          orderBy('createdAt', 'desc'),
+          ...(limit ? [firestoreLimit(limit)] : [])
+        );
       }
 
-      if (limit) {
-        query = query.limit(limit);
-      }
+      const querySnapshot = await getDocs(q);
 
-      const { data, error } = await query;
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      // Convert snake_case to camelCase
-      const activityLogs: ActivityLog[] = (data || []).map(row => ({
-        id: row.id,
-        userId: row.user_id,
-        action: row.action,
-        policyId: row.policy_id,
-        policyNumber: row.policy_number,
-        policyholderName: row.policyholder_name,
-        description: row.description,
-        performedBy: row.performed_by,
-        performedByName: row.performed_by_name,
-        createdAt: new Date(row.created_at),
-        metadata: row.metadata,
-      }));
+      const activityLogs: ActivityLog[] = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          userId: data.userId,
+          action: data.action,
+          policyId: data.policyId,
+          policyNumber: data.policyNumber,
+          policyholderName: data.policyholderName,
+          description: data.description,
+          performedBy: data.performedBy,
+          performedByName: data.performedByName,
+          createdAt: toDate(data.createdAt),
+          metadata: data.metadata,
+        };
+      });
 
       return activityLogs;
     } catch (error) {
@@ -107,30 +119,30 @@ export const activityLogService = {
   // Get activity logs for a specific policy
   getPolicyActivityLogs: async (policyId: string): Promise<ActivityLog[]> => {
     try {
-      const { data, error } = await supabase
-        .from('activity_logs')
-        .select('*')
-        .eq('policy_id', policyId)
-        .order('created_at', { ascending: false });
+      const q = query(
+        collection(db, COLLECTIONS.ACTIVITY_LOGS),
+        where('policyId', '==', policyId),
+        orderBy('createdAt', 'desc')
+      );
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
+      const querySnapshot = await getDocs(q);
 
-      const activityLogs: ActivityLog[] = (data || []).map(row => ({
-        id: row.id,
-        userId: row.user_id,
-        action: row.action,
-        policyId: row.policy_id,
-        policyNumber: row.policy_number,
-        policyholderName: row.policyholder_name,
-        description: row.description,
-        performedBy: row.performed_by,
-        performedByName: row.performed_by_name,
-        createdAt: new Date(row.created_at),
-        metadata: row.metadata,
-      }));
+      const activityLogs: ActivityLog[] = querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          userId: data.userId,
+          action: data.action,
+          policyId: data.policyId,
+          policyNumber: data.policyNumber,
+          policyholderName: data.policyholderName,
+          description: data.description,
+          performedBy: data.performedBy,
+          performedByName: data.performedByName,
+          createdAt: toDate(data.createdAt),
+          metadata: data.metadata,
+        };
+      });
 
       return activityLogs;
     } catch (error) {

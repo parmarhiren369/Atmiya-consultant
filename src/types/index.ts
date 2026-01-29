@@ -199,7 +199,7 @@ export interface Notification {
 }
 
 export interface AppUser {
-  id: string; // Supabase auth ID
+  id: string; // Firebase auth ID
   userId?: string; // Legacy field for backward compatibility
   email: string;
   displayName: string;
@@ -219,7 +219,7 @@ export interface AppUser {
   lockedAt?: Date;
 }
 
-export interface SupabaseUserData {
+export interface FirebaseUserData {
   id: string;
   email: string;
   displayName?: string;
@@ -250,6 +250,9 @@ export interface SupabaseUserData {
   lockedAt?: string;
   locked_at?: string;
 }
+
+// Alias for backward compatibility
+export type SupabaseUserData = FirebaseUserData;
 
 export interface SignupCredentials {
   email: string;

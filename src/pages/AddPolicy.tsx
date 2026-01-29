@@ -168,7 +168,7 @@ export function AddPolicy() {
     }
   }, [user]);
 
-  // Initialize Supabase storage bucket on mount
+  // Initialize Firebase storage on mount
   useEffect(() => {
     const initStorage = async () => {
       await storageService.initializeBucket();
@@ -835,7 +835,7 @@ export function AddPolicy() {
         return;
       }
 
-      // Upload files to Supabase
+      // Upload files to Firebase Storage
       const uploadResults = await storageService.uploadMultiplePDFs(pdfFiles, effectiveUserId);
       
       const successfulUploads = uploadResults.filter(result => result !== null) as Array<{ url: string; path: string; fileName: string }>;
@@ -876,7 +876,7 @@ export function AddPolicy() {
   const handleRemovePDF = async (index: number) => {
     const pdf = uploadedPDFs[index];
     
-    // Delete from Supabase storage
+    // Delete from Firebase Storage
     const deleted = await storageService.deleteFile(pdf.path);
     
     if (deleted) {
@@ -971,7 +971,7 @@ export function AddPolicy() {
       const customerName = formData.policyholderName || 'general';
       const policyIdentifier = formData.policyNumber || `GEN-${Date.now()}`; // Use policy number
       
-      // Upload files to Supabase client documents bucket with customer folder
+      // Upload files to Firebase Storage client documents bucket with customer folder
       const uploadResults = await storageService.uploadMultipleClientDocuments(
         files, 
         effectiveUserId,
@@ -1017,7 +1017,7 @@ export function AddPolicy() {
   const handleRemoveClientDoc = async (index: number) => {
     const doc = uploadedClientDocs[index];
     
-    // Delete from Supabase storage
+    // Delete from Firebase Storage
     const deleted = await storageService.deleteClientDocument(doc.path);
     
     if (deleted) {
@@ -2430,7 +2430,7 @@ export function AddPolicy() {
                       <div className="mb-4 p-4 border border-green-200 dark:border-green-600 rounded-lg bg-green-50 dark:bg-green-900/20">
                         <h4 className="text-sm font-semibold text-green-800 dark:text-green-300 mb-2">📁 Upload client documents</h4>
                         <p className="text-xs text-green-600 dark:text-green-400">
-                          Upload any documents related to this client (PDFs, images, Word docs). Each user has their own private folder in Supabase.
+                          Upload any documents related to this client (PDFs, images, Word docs). Each user has their own private folder in Firebase Storage.
                         </p>
                       </div>
 

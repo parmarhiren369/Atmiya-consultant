@@ -1,9 +1,16 @@
-import { supabase } from '../config/supabase';
+import { 
+  collection, 
+  getDocs, 
+  query, 
+  where, 
+  orderBy
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 import { storageService } from './storageService';
 
 interface ClientFolder {
   id: string;
-  policyNumber: string; // Add policy number
+  policyNumber: string;
   policyholderName: string;
   policyType: string;
   insuranceCompany: string;
@@ -19,18 +26,14 @@ interface ClientFolder {
 export async function getClientFolders(userId: string): Promise<ClientFolder[]> {
   try {
     // Fetch all active policies for the user
-    const { data: policies, error } = await supabase
-      .from('policies')
-      .select('*')
-      .eq('user_id', userId)
-      .order('policyholder_name', { ascending: true });
+    const q = query(
+      collection(db, COLLECTIONS.POLICIES),
+      where('userId', '==', userId),
+      orderBy('policyholderName', 'asc')
+    );
+    const querySnapshot = await getDocs(q);
 
-    if (error) {
-      console.error('Error fetching policies:', error);
-      throw error;
-    }
-
-    if (!policies || policies.length === 0) {
+    if (querySnapshot.empty) {
       return [];
     }
 
@@ -38,25 +41,26 @@ export async function getClientFolders(userId: string): Promise<ClientFolder[]> 
     // Each unique policyholder name becomes a client folder
     const clientMap = new Map<string, ClientFolder>();
 
-    policies.forEach((policy) => {
-      const key = (policy.policyholder_name || policy.policyholderName || '').toLowerCase();
+    querySnapshot.docs.forEach((docSnap) => {
+      const policy = docSnap.data();
+      const key = (policy.policyholderName || '').toLowerCase();
       
       if (!clientMap.has(key)) {
         // Create a new client folder entry
         clientMap.set(key, {
-          id: policy.id,
-          policyholderName: policy.policyholder_name || policy.policyholderName,
-          policyNumber: policy.policy_number || policy.policyNumber,
-          policyType: policy.policy_type || policy.policyType || 'General',
-          insuranceCompany: policy.insurance_company || policy.insuranceCompany,
+          id: docSnap.id,
+          policyholderName: policy.policyholderName,
+          policyNumber: policy.policyNumber,
+          policyType: policy.policyType || 'General',
+          insuranceCompany: policy.insuranceCompany,
           documentCount: 0,
-          driveFileUrl: policy.drive_file_url || policy.driveFileUrl,
-          documentsFolderLink: policy.documents_folder_link || policy.documentsFolderLink,
+          driveFileUrl: policy.driveFileUrl,
+          documentsFolderLink: policy.documentsFolderLink,
         });
       }
     });
 
-    // Get actual document counts from Supabase Storage for each client
+    // Get actual document counts from Firebase Storage for each client
     const clientFolders = Array.from(clientMap.values());
     
     // Fetch document counts in parallel
@@ -66,7 +70,7 @@ export async function getClientFolders(userId: string): Promise<ClientFolder[]> 
           userId,
           'client-documents',
           folder.policyholderName,
-          folder.policyNumber // Use policy number as identifier
+          folder.policyNumber
         );
         folder.documentCount = files.length;
       } catch (error) {
@@ -90,19 +94,25 @@ export async function getClientFolders(userId: string): Promise<ClientFolder[]> 
  */
 export async function getClientDocuments(userId: string, policyholderName: string) {
   try {
-    const { data: policies, error } = await supabase
-      .from('policies')
-      .select('*')
-      .eq('user_id', userId)
-      .ilike('policyholder_name', policyholderName)
-      .order('created_at', { ascending: false });
+    // For case-insensitive search, we'll fetch all and filter
+    // Firestore doesn't support native case-insensitive queries
+    const q = query(
+      collection(db, COLLECTIONS.POLICIES),
+      where('userId', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    const querySnapshot = await getDocs(q);
 
-    if (error) {
-      console.error('Error fetching client documents:', error);
-      throw error;
-    }
+    const policies = querySnapshot.docs
+      .map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }))
+      .filter(policy => 
+        (policy as Record<string, unknown>).policyholderName?.toString().toLowerCase() === policyholderName.toLowerCase()
+      );
 
-    return policies || [];
+    return policies;
   } catch (error) {
     console.error('Error in getClientDocuments:', error);
     throw error;

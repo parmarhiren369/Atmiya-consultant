@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Shield, Mail, Lock, User } from 'lucide-react';
-import { supabaseAuthService } from '../services/supabaseAuthService';
+import { firebaseAuthService } from '../services/firebaseAuthService';
 import toast from 'react-hot-toast';
 
 export function Signup() {
@@ -35,7 +35,7 @@ export function Signup() {
     setLoading(true);
 
     try {
-      const { user, error } = await supabaseAuthService.signup({
+      const { user, error } = await firebaseAuthService.signup({
         email: formData.email,
         password: formData.password,
         displayName: formData.displayName,

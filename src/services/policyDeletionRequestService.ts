@@ -1,35 +1,66 @@
-import { supabase } from '../config/supabase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  addDoc, 
+  updateDoc, 
+  query, 
+  where, 
+  orderBy,
+  Timestamp
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 import { PolicyDeletionRequest } from '../types';
+
+// Helper to convert Firestore Timestamp to Date
+const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => {
+  if (!timestamp) return undefined;
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  return new Date(timestamp);
+};
+
+// Helper to map Firestore data to PolicyDeletionRequest type
+const mapDocToRequest = (id: string, data: Record<string, unknown>): PolicyDeletionRequest => ({
+  id,
+  policyId: data.policyId as string,
+  policyNumber: data.policyNumber as string,
+  policyholderName: data.policyholderName as string,
+  requestedBy: data.requestedBy as string,
+  requestedByName: data.requestedByName as string,
+  requestReason: data.requestReason as string,
+  reason: data.reason as string,
+  status: data.status as 'pending' | 'approved' | 'rejected',
+  requestDate: toDate(data.requestDate as Timestamp | string) || new Date(),
+  reviewDate: toDate(data.reviewDate as Timestamp | string),
+  reviewedBy: data.reviewedBy as string,
+  reviewedByName: data.reviewedByName as string,
+  reviewComments: data.reviewComments as string,
+});
 
 export const policyDeletionRequestService = {
   // Create a new deletion request
   createDeletionRequest: async (requestData: Omit<PolicyDeletionRequest, 'id' | 'requestDate'>): Promise<string> => {
     try {
+      const now = new Date().toISOString();
       const requestWithTimestamp = {
-        policy_id: requestData.policyId,
-        policy_number: requestData.policyNumber,
-        policyholder_name: requestData.policyholderName,
-        requested_by: requestData.requestedBy,
-        requested_by_name: requestData.requestedByName,
-        request_reason: requestData.requestReason,
+        policyId: requestData.policyId,
+        policyNumber: requestData.policyNumber,
+        policyholderName: requestData.policyholderName,
+        requestedBy: requestData.requestedBy,
+        requestedByName: requestData.requestedByName,
+        requestReason: requestData.requestReason,
         status: requestData.status || 'pending',
-        request_date: new Date().toISOString(),
-        review_date: requestData.reviewDate ? new Date(requestData.reviewDate).toISOString() : null,
-        reviewed_by: requestData.reviewedBy || null,
-        reviewed_by_name: requestData.reviewedByName || null,
-        review_comments: requestData.reviewComments || null,
+        requestDate: now,
+        reviewDate: requestData.reviewDate ? new Date(requestData.reviewDate as Date).toISOString() : null,
+        reviewedBy: requestData.reviewedBy || null,
+        reviewedByName: requestData.reviewedByName || null,
+        reviewComments: requestData.reviewComments || null,
       };
 
-      const { data, error } = await supabase
-        .from('policy_deletion_requests')
-        .insert([requestWithTimestamp])
-        .select()
-        .single();
-
-      if (error) throw error;
-      
-      console.log('Deletion request created with ID:', data.id);
-      return data.id;
+      const docRef = await addDoc(collection(db, COLLECTIONS.POLICY_DELETION_REQUESTS), requestWithTimestamp);
+      console.log('Deletion request created with ID:', docRef.id);
+      return docRef.id;
     } catch (error) {
       console.error('Error creating deletion request:', error);
       throw error;
@@ -39,28 +70,15 @@ export const policyDeletionRequestService = {
   // Get all deletion requests (for admin)
   getAllDeletionRequests: async (): Promise<PolicyDeletionRequest[]> => {
     try {
-      const { data, error } = await supabase
-        .from('policy_deletion_requests')
-        .select('*')
-        .order('request_date', { ascending: false });
+      const q = query(
+        collection(db, COLLECTIONS.POLICY_DELETION_REQUESTS),
+        orderBy('requestDate', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (error) throw error;
-
-      return data.map(item => ({
-        id: item.id,
-        policyId: item.policy_id,
-        policyNumber: item.policy_number,
-        policyholderName: item.policyholder_name,
-        requestedBy: item.requested_by,
-        requestedByName: item.requested_by_name,
-        reason: item.reason,
-        status: item.status,
-        requestDate: new Date(item.request_date),
-        reviewDate: item.review_date ? new Date(item.review_date) : undefined,
-        reviewedBy: item.reviewed_by,
-        reviewedByName: item.reviewed_by_name,
-        reviewComments: item.review_comments,
-      }));
+      return querySnapshot.docs.map(docSnap => 
+        mapDocToRequest(docSnap.id, docSnap.data())
+      );
     } catch (error) {
       console.error('Error fetching deletion requests:', error);
       throw error;
@@ -70,29 +88,16 @@ export const policyDeletionRequestService = {
   // Get pending deletion requests (for admin)
   getPendingDeletionRequests: async (): Promise<PolicyDeletionRequest[]> => {
     try {
-      const { data, error } = await supabase
-        .from('policy_deletion_requests')
-        .select('*')
-        .eq('status', 'pending')
-        .order('request_date', { ascending: false });
+      const q = query(
+        collection(db, COLLECTIONS.POLICY_DELETION_REQUESTS),
+        where('status', '==', 'pending'),
+        orderBy('requestDate', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (error) throw error;
-
-      return data.map(item => ({
-        id: item.id,
-        policyId: item.policy_id,
-        policyNumber: item.policy_number,
-        policyholderName: item.policyholder_name,
-        requestedBy: item.requested_by,
-        requestedByName: item.requested_by_name,
-        reason: item.reason,
-        status: item.status,
-        requestDate: new Date(item.request_date),
-        reviewDate: item.review_date ? new Date(item.review_date) : undefined,
-        reviewedBy: item.reviewed_by,
-        reviewedByName: item.reviewed_by_name,
-        reviewComments: item.review_comments,
-      }));
+      return querySnapshot.docs.map(docSnap => 
+        mapDocToRequest(docSnap.id, docSnap.data())
+      );
     } catch (error) {
       console.error('Error fetching pending deletion requests:', error);
       throw error;
@@ -102,29 +107,16 @@ export const policyDeletionRequestService = {
   // Get deletion requests by user
   getDeletionRequestsByUser: async (userId: string): Promise<PolicyDeletionRequest[]> => {
     try {
-      const { data, error } = await supabase
-        .from('policy_deletion_requests')
-        .select('*')
-        .eq('requested_by', userId)
-        .order('request_date', { ascending: false });
+      const q = query(
+        collection(db, COLLECTIONS.POLICY_DELETION_REQUESTS),
+        where('requestedBy', '==', userId),
+        orderBy('requestDate', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (error) throw error;
-
-      return data.map(item => ({
-        id: item.id,
-        policyId: item.policy_id,
-        policyNumber: item.policy_number,
-        policyholderName: item.policyholder_name,
-        requestedBy: item.requested_by,
-        requestedByName: item.requested_by_name,
-        reason: item.reason,
-        status: item.status,
-        requestDate: new Date(item.request_date),
-        reviewDate: item.review_date ? new Date(item.review_date) : undefined,
-        reviewedBy: item.reviewed_by,
-        reviewedByName: item.reviewed_by_name,
-        reviewComments: item.review_comments,
-      }));
+      return querySnapshot.docs.map(docSnap => 
+        mapDocToRequest(docSnap.id, docSnap.data())
+      );
     } catch (error) {
       console.error('Error fetching user deletion requests:', error);
       throw error;
@@ -142,19 +134,13 @@ export const policyDeletionRequestService = {
     try {
       const updateData = {
         status,
-        reviewed_by: reviewedBy,
-        reviewed_by_name: reviewedByName,
-        review_date: new Date().toISOString(),
-        review_comments: reviewComments || ''
+        reviewedBy,
+        reviewedByName,
+        reviewDate: new Date().toISOString(),
+        reviewComments: reviewComments || ''
       };
 
-      const { error } = await supabase
-        .from('policy_deletion_requests')
-        .update(updateData)
-        .eq('id', requestId);
-
-      if (error) throw error;
-
+      await updateDoc(doc(db, COLLECTIONS.POLICY_DELETION_REQUESTS, requestId), updateData);
       console.log('Deletion request status updated successfully');
     } catch (error) {
       console.error('Error updating deletion request status:', error);
@@ -165,32 +151,17 @@ export const policyDeletionRequestService = {
   // Check if a policy has pending deletion request
   checkPendingDeletionRequest: async (policyId: string): Promise<PolicyDeletionRequest | null> => {
     try {
-      const { data, error } = await supabase
-        .from('policy_deletion_requests')
-        .select('*')
-        .eq('policy_id', policyId)
-        .eq('status', 'pending')
-        .maybeSingle();
-
-      if (error) throw error;
+      const q = query(
+        collection(db, COLLECTIONS.POLICY_DELETION_REQUESTS),
+        where('policyId', '==', policyId),
+        where('status', '==', 'pending')
+      );
+      const querySnapshot = await getDocs(q);
       
-      if (!data) return null;
+      if (querySnapshot.empty) return null;
 
-      return {
-        id: data.id,
-        policyId: data.policy_id,
-        policyNumber: data.policy_number,
-        policyholderName: data.policyholder_name,
-        requestedBy: data.requested_by,
-        requestedByName: data.requested_by_name,
-        requestReason: data.request_reason,
-        status: data.status,
-        requestDate: new Date(data.request_date),
-        reviewDate: data.review_date ? new Date(data.review_date) : undefined,
-        reviewedBy: data.reviewed_by,
-        reviewedByName: data.reviewed_by_name,
-        reviewComments: data.review_comments,
-      };
+      const docSnap = querySnapshot.docs[0];
+      return mapDocToRequest(docSnap.id, docSnap.data());
     } catch (error) {
       console.error('Error checking pending deletion request:', error);
       throw error;

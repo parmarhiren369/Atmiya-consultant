@@ -1,54 +1,77 @@
-import { supabase } from '../config/supabase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  addDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  Timestamp
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 import { DeletedPolicy } from '../types';
 import { activityLogService } from './activityLogService';
+
+// Helper to convert Firestore Timestamp to Date
+const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => {
+  if (!timestamp) return undefined;
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  return new Date(timestamp);
+};
+
+// Helper to map Firestore data to DeletedPolicy type
+const mapDocToDeletedPolicy = (id: string, data: Record<string, unknown>): DeletedPolicy => ({
+  id,
+  userId: data.userId as string,
+  policyholderName: data.policyholderName as string,
+  contactNo: data.contactNo as string,
+  emailId: data.emailId as string,
+  address: data.address as string,
+  policyNumber: data.policyNumber as string,
+  insuranceCompany: data.insuranceCompany as string,
+  policyType: data.policyType as string,
+  premiumAmount: data.premiumAmount as number,
+  coverageAmount: data.coverageAmount as number,
+  policyStartDate: toDate(data.policyStartDate as Timestamp | string),
+  policyEndDate: toDate(data.policyEndDate as Timestamp | string),
+  premiumDueDate: toDate(data.premiumDueDate as Timestamp | string),
+  status: data.status as string,
+  paymentFrequency: data.paymentFrequency as string,
+  nomineeName: data.nomineeName as string,
+  nomineeRelationship: data.nomineeRelationship as string,
+  notes: data.notes as string,
+  documents: (data.documents as string[]) || [],
+  deletedAt: toDate(data.deletedAt as Timestamp | string) || new Date(),
+  deletedBy: data.deletedBy as string,
+  createdAt: toDate(data.createdAt as Timestamp | string) || new Date(),
+  updatedAt: toDate(data.updatedAt as Timestamp | string) || new Date(),
+});
 
 export const deletedPolicyService = {
   // Get all deleted policies (optionally filtered by userId)
   getDeletedPolicies: async (userId?: string): Promise<DeletedPolicy[]> => {
     try {
-      let query = supabase
-        .from('deleted_policies')
-        .select('*')
-        .order('deleted_at', { ascending: false });
-
+      let q;
       if (userId) {
-        query = query.eq('user_id', userId);
+        q = query(
+          collection(db, COLLECTIONS.DELETED_POLICIES),
+          where('userId', '==', userId),
+          orderBy('deletedAt', 'desc')
+        );
+      } else {
+        q = query(
+          collection(db, COLLECTIONS.DELETED_POLICIES),
+          orderBy('deletedAt', 'desc')
+        );
       }
 
-      const { data, error } = await query;
+      const querySnapshot = await getDocs(q);
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      // Convert snake_case to camelCase
-      const deletedPolicies: DeletedPolicy[] = (data || []).map(row => ({
-        id: row.id,
-        userId: row.user_id,
-        policyholderName: row.policyholder_name,
-        contactNo: row.contact_no,
-        emailId: row.email_id,
-        address: row.address,
-        policyNumber: row.policy_number,
-        insuranceCompany: row.insurance_company,
-        policyType: row.policy_type,
-        premiumAmount: row.premium_amount,
-        coverageAmount: row.coverage_amount,
-        policyStartDate: row.policy_start_date ? new Date(row.policy_start_date) : undefined,
-        policyEndDate: row.policy_end_date ? new Date(row.policy_end_date) : undefined,
-        premiumDueDate: row.premium_due_date ? new Date(row.premium_due_date) : undefined,
-        status: row.status,
-        paymentFrequency: row.payment_frequency,
-        nomineeName: row.nominee_name,
-        nomineeRelationship: row.nominee_relationship,
-        notes: row.notes,
-        documents: row.documents || [],
-        deletedAt: new Date(row.deleted_at),
-        deletedBy: row.deleted_by,
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-      }));
+      const deletedPolicies = querySnapshot.docs.map(docSnap => 
+        mapDocToDeletedPolicy(docSnap.id, docSnap.data())
+      );
 
       console.log(`Found ${deletedPolicies.length} deleted policies`);
       return deletedPolicies;
@@ -61,46 +84,35 @@ export const deletedPolicyService = {
   // Restore a deleted policy back to active policies
   restorePolicy: async (deletedPolicy: DeletedPolicy, userId?: string, userDisplayName?: string): Promise<void> => {
     try {
-      // Insert back into policies table
-      const { error: insertError } = await supabase
-        .from('policies')
-        .insert([{
-          user_id: deletedPolicy.userId,
-          policyholder_name: deletedPolicy.policyholderName,
-          contact_no: deletedPolicy.contactNo,
-          email_id: deletedPolicy.emailId,
-          address: deletedPolicy.address,
-          policy_number: deletedPolicy.policyNumber,
-          insurance_company: deletedPolicy.insuranceCompany,
-          policy_type: deletedPolicy.policyType,
-          premium_amount: deletedPolicy.premiumAmount,
-          coverage_amount: deletedPolicy.coverageAmount,
-          policy_start_date: deletedPolicy.policyStartDate,
-          policy_end_date: deletedPolicy.policyEndDate,
-          premium_due_date: deletedPolicy.premiumDueDate,
-          status: deletedPolicy.status,
-          payment_frequency: deletedPolicy.paymentFrequency,
-          nominee_name: deletedPolicy.nomineeName,
-          nominee_relationship: deletedPolicy.nomineeRelationship,
-          notes: deletedPolicy.notes,
-          documents: deletedPolicy.documents,
-        }]);
+      const now = new Date().toISOString();
+      
+      // Insert back into policies collection
+      await addDoc(collection(db, COLLECTIONS.POLICIES), {
+        userId: deletedPolicy.userId,
+        policyholderName: deletedPolicy.policyholderName,
+        contactNo: deletedPolicy.contactNo,
+        emailId: deletedPolicy.emailId,
+        address: deletedPolicy.address,
+        policyNumber: deletedPolicy.policyNumber,
+        insuranceCompany: deletedPolicy.insuranceCompany,
+        policyType: deletedPolicy.policyType,
+        premiumAmount: deletedPolicy.premiumAmount,
+        coverageAmount: deletedPolicy.coverageAmount,
+        policyStartDate: deletedPolicy.policyStartDate?.toISOString(),
+        policyEndDate: deletedPolicy.policyEndDate?.toISOString(),
+        premiumDueDate: deletedPolicy.premiumDueDate?.toISOString(),
+        status: deletedPolicy.status || 'active',
+        paymentFrequency: deletedPolicy.paymentFrequency,
+        nomineeName: deletedPolicy.nomineeName,
+        nomineeRelationship: deletedPolicy.nomineeRelationship,
+        notes: deletedPolicy.notes,
+        documents: deletedPolicy.documents,
+        createdAt: deletedPolicy.createdAt?.toISOString() || now,
+        updatedAt: now,
+      });
 
-      if (insertError) {
-        console.error('Supabase error restoring policy:', insertError);
-        throw insertError;
-      }
-
-      // Remove from deleted_policies table
-      const { error: deleteError } = await supabase
-        .from('deleted_policies')
-        .delete()
-        .eq('id', deletedPolicy.id);
-
-      if (deleteError) {
-        console.error('Supabase error removing from deleted:', deleteError);
-        throw deleteError;
-      }
+      // Remove from deleted_policies collection
+      await deleteDoc(doc(db, COLLECTIONS.DELETED_POLICIES, deletedPolicy.id));
 
       console.log(`Policy restored with ID: ${deletedPolicy.id}`);
 
@@ -127,15 +139,7 @@ export const deletedPolicyService = {
     userDisplayName?: string
   ): Promise<void> => {
     try {
-      const { error } = await supabase
-        .from('deleted_policies')
-        .delete()
-        .eq('id', deletedPolicyId);
-
-      if (error) {
-        console.error('Supabase error permanently deleting:', error);
-        throw error;
-      }
+      await deleteDoc(doc(db, COLLECTIONS.DELETED_POLICIES, deletedPolicyId));
 
       console.log(`Policy permanently deleted with ID: ${deletedPolicyId}`);
 
@@ -157,47 +161,11 @@ export const deletedPolicyService = {
   // Get a single deleted policy by ID
   getDeletedPolicyById: async (id: string): Promise<DeletedPolicy | null> => {
     try {
-      const { data, error } = await supabase
-        .from('deleted_policies')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const docSnap = await getDoc(doc(db, COLLECTIONS.DELETED_POLICIES, id));
 
-      if (error) {
-        if (error.code === 'PGRST116') {
-          return null;
-        }
-        throw error;
-      }
+      if (!docSnap.exists()) return null;
 
-      if (!data) return null;
-
-      return {
-        id: data.id,
-        userId: data.user_id,
-        policyholderName: data.policyholder_name,
-        contactNo: data.contact_no,
-        emailId: data.email_id,
-        address: data.address,
-        policyNumber: data.policy_number,
-        insuranceCompany: data.insurance_company,
-        policyType: data.policy_type,
-        premiumAmount: data.premium_amount,
-        coverageAmount: data.coverage_amount,
-        policyStartDate: data.policy_start_date ? new Date(data.policy_start_date) : undefined,
-        policyEndDate: data.policy_end_date ? new Date(data.policy_end_date) : undefined,
-        premiumDueDate: data.premium_due_date ? new Date(data.premium_due_date) : undefined,
-        status: data.status,
-        paymentFrequency: data.payment_frequency,
-        nomineeName: data.nominee_name,
-        nomineeRelationship: data.nominee_relationship,
-        notes: data.notes,
-        documents: data.documents || [],
-        deletedAt: new Date(data.deleted_at),
-        deletedBy: data.deleted_by,
-        createdAt: new Date(data.created_at),
-        updatedAt: new Date(data.updated_at),
-      };
+      return mapDocToDeletedPolicy(docSnap.id, docSnap.data());
     } catch (error) {
       console.error('Error getting deleted policy by ID:', error);
       throw new Error('Failed to fetch deleted policy');

@@ -1,4 +1,14 @@
-import { supabase, TABLES } from '../config/supabase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  query, 
+  where, 
+  orderBy 
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 
 // Razorpay configuration - Set these in your .env file
 const RAZORPAY_KEY_ID = import.meta.env.VITE_RAZORPAY_KEY_ID || '';
@@ -95,27 +105,29 @@ class RazorpayService {
    */
   async getSubscriptionPlans(): Promise<SubscriptionPlan[]> {
     try {
-      const { data, error } = await supabase
-        .from('subscription_plans')
-        .select('*')
-        .eq('is_active', true)
-        .order('duration_days');
+      const q = query(
+        collection(db, COLLECTIONS.SUBSCRIPTION_PLANS),
+        where('isActive', '==', true),
+        orderBy('durationDays')
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (error) throw error;
-
-      return data.map(plan => ({
-        id: plan.id,
-        name: plan.name,
-        displayName: plan.display_name,
-        description: plan.description,
-        priceInr: parseFloat(plan.price_inr),
-        currency: plan.currency,
-        durationDays: plan.duration_days,
-        razorpayPlanId: plan.razorpay_plan_id,
-        razorpayPaymentLink: plan.razorpay_payment_link,
-        features: plan.features || [],
-        isActive: plan.is_active
-      }));
+      return querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          name: data.name,
+          displayName: data.displayName,
+          description: data.description,
+          priceInr: parseFloat(data.priceInr),
+          currency: data.currency,
+          durationDays: data.durationDays,
+          razorpayPlanId: data.razorpayPlanId,
+          razorpayPaymentLink: data.razorpayPaymentLink,
+          features: data.features || [],
+          isActive: data.isActive
+        };
+      });
     } catch (error) {
       console.error('Error fetching subscription plans:', error);
       throw error;
@@ -130,18 +142,19 @@ class RazorpayService {
       console.log('Creating order for user:', userId, 'plan:', planName);
       
       // Get plan details first
-      const { data: planData, error: planError } = await supabase
-        .from('subscription_plans')
-        .select('*')
-        .eq('name', planName)
-        .eq('is_active', true)
-        .single();
+      const plansQuery = query(
+        collection(db, COLLECTIONS.SUBSCRIPTION_PLANS),
+        where('name', '==', planName),
+        where('isActive', '==', true)
+      );
+      const plansSnapshot = await getDocs(plansQuery);
 
-      if (planError || !planData) {
+      if (plansSnapshot.empty) {
         throw new Error('Subscription plan not found');
       }
 
-      const amount = Math.round(parseFloat(planData.price_inr) * 100);
+      const planData = plansSnapshot.docs[0].data();
+      const amount = Math.round(parseFloat(planData.priceInr) * 100);
 
       try {
         // Try to call backend API first
@@ -186,12 +199,12 @@ class RazorpayService {
         await this.createPaymentRecord({
           userId,
           razorpayOrderId: orderData.id,
-          amount: planData.price_inr,
+          amount: planData.priceInr,
           currency: 'INR',
           status: 'pending',
           subscriptionPlan: planName,
-          subscriptionDays: planData.duration_days,
-          description: `TEST - Subscription payment for ${planData.display_name}`
+          subscriptionDays: planData.durationDays,
+          description: `TEST - Subscription payment for ${planData.displayName}`
         });
 
         return orderData;
@@ -294,7 +307,7 @@ class RazorpayService {
   }
 
   /**
-   * Create payment record in database
+   * Create payment record in Firestore
    */
   async createPaymentRecord(data: {
     userId: string;
@@ -313,30 +326,28 @@ class RazorpayService {
     errorMessage?: string;
   }): Promise<string> {
     try {
-      const { data: paymentData, error } = await supabase
-        .from('payment_history')
-        .insert([{
-          user_id: data.userId,
-          razorpay_order_id: data.razorpayOrderId,
-          razorpay_payment_id: data.razorpayPaymentId,
-          razorpay_signature: data.razorpaySignature,
-          amount: data.amount,
-          currency: data.currency,
-          status: data.status,
-          payment_method: data.paymentMethod,
-          subscription_plan: data.subscriptionPlan,
-          subscription_days: data.subscriptionDays,
-          subscription_start_date: data.subscriptionStartDate?.toISOString(),
-          subscription_end_date: data.subscriptionEndDate?.toISOString(),
-          description: data.description,
-          error_message: data.errorMessage
-        }])
-        .select()
-        .single();
+      const now = new Date().toISOString();
+      const paymentDoc = {
+        userId: data.userId,
+        razorpayOrderId: data.razorpayOrderId || null,
+        razorpayPaymentId: data.razorpayPaymentId || null,
+        razorpaySignature: data.razorpaySignature || null,
+        amount: data.amount,
+        currency: data.currency,
+        status: data.status,
+        paymentMethod: data.paymentMethod || null,
+        subscriptionPlan: data.subscriptionPlan,
+        subscriptionDays: data.subscriptionDays,
+        subscriptionStartDate: data.subscriptionStartDate?.toISOString() || null,
+        subscriptionEndDate: data.subscriptionEndDate?.toISOString() || null,
+        description: data.description || null,
+        errorMessage: data.errorMessage || null,
+        createdAt: now,
+        updatedAt: now,
+      };
 
-      if (error) throw error;
-
-      return paymentData.id;
+      const docRef = await addDoc(collection(db, COLLECTIONS.PAYMENT_HISTORY), paymentDoc);
+      return docRef.id;
     } catch (error) {
       console.error('Error creating payment record:', error);
       throw error;
@@ -357,18 +368,23 @@ class RazorpayService {
     }
   ): Promise<void> {
     try {
-      const { error } = await supabase
-        .from('payment_history')
-        .update({
-          razorpay_payment_id: updates.razorpayPaymentId,
-          razorpay_signature: updates.razorpaySignature,
-          status: updates.status,
-          payment_method: updates.paymentMethod,
-          error_message: updates.errorMessage
-        })
-        .eq('razorpay_order_id', orderId);
+      const q = query(
+        collection(db, COLLECTIONS.PAYMENT_HISTORY),
+        where('razorpayOrderId', '==', orderId)
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (error) throw error;
+      if (!querySnapshot.empty) {
+        const paymentDoc = querySnapshot.docs[0];
+        await updateDoc(doc(db, COLLECTIONS.PAYMENT_HISTORY, paymentDoc.id), {
+          razorpayPaymentId: updates.razorpayPaymentId || null,
+          razorpaySignature: updates.razorpaySignature || null,
+          status: updates.status,
+          paymentMethod: updates.paymentMethod || null,
+          errorMessage: updates.errorMessage || null,
+          updatedAt: new Date().toISOString(),
+        });
+      }
     } catch (error) {
       console.error('Error updating payment record:', error);
       throw error;
@@ -385,47 +401,46 @@ class RazorpayService {
   ): Promise<void> {
     try {
       // Get plan details
-      const { data: planData, error: planError } = await supabase
-        .from('subscription_plans')
-        .select('*')
-        .eq('name', planName)
-        .single();
+      const plansQuery = query(
+        collection(db, COLLECTIONS.SUBSCRIPTION_PLANS),
+        where('name', '==', planName)
+      );
+      const plansSnapshot = await getDocs(plansQuery);
 
-      if (planError || !planData) {
+      if (plansSnapshot.empty) {
         throw new Error('Subscription plan not found');
       }
 
+      const planData = plansSnapshot.docs[0].data();
+
       const startDate = new Date();
       const endDate = new Date();
-      endDate.setDate(endDate.getDate() + planData.duration_days);
+      endDate.setDate(endDate.getDate() + planData.durationDays);
 
       // Update user subscription
-      const { error: updateError } = await supabase
-        .from(TABLES.USERS)
-        .update({
-          subscription_status: 'active',
-          subscription_start_date: startDate.toISOString(),
-          subscription_end_date: endDate.toISOString(),
-          subscription_plan: planName,
-          payment_method: 'razorpay',
-          is_locked: false
-        })
-        .eq('id', userId);
-
-      if (updateError) throw updateError;
+      await updateDoc(doc(db, COLLECTIONS.USERS, userId), {
+        subscriptionStatus: 'active',
+        subscriptionStartDate: startDate.toISOString(),
+        subscriptionEndDate: endDate.toISOString(),
+        subscriptionPlan: planName,
+        paymentMethod: 'razorpay',
+        isLocked: false
+      });
 
       // Update payment record with subscription dates
-      const { error: paymentUpdateError } = await supabase
-        .from('payment_history')
-        .update({
-          subscription_start_date: startDate.toISOString(),
-          subscription_end_date: endDate.toISOString()
-        })
-        .eq('user_id', userId)
-        .eq('razorpay_payment_id', razorpayPaymentId);
+      const paymentsQuery = query(
+        collection(db, COLLECTIONS.PAYMENT_HISTORY),
+        where('userId', '==', userId),
+        where('razorpayPaymentId', '==', razorpayPaymentId)
+      );
+      const paymentsSnapshot = await getDocs(paymentsQuery);
 
-      if (paymentUpdateError) {
-        console.error('Error updating payment record dates:', paymentUpdateError);
+      if (!paymentsSnapshot.empty) {
+        await updateDoc(doc(db, COLLECTIONS.PAYMENT_HISTORY, paymentsSnapshot.docs[0].id), {
+          subscriptionStartDate: startDate.toISOString(),
+          subscriptionEndDate: endDate.toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
       }
     } catch (error) {
       console.error('Error activating subscription:', error);
@@ -493,33 +508,35 @@ class RazorpayService {
    */
   async getPaymentHistory(userId: string): Promise<PaymentHistory[]> {
     try {
-      const { data, error } = await supabase
-        .from('payment_history')
-        .select('*')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+      const q = query(
+        collection(db, COLLECTIONS.PAYMENT_HISTORY),
+        where('userId', '==', userId),
+        orderBy('createdAt', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (error) throw error;
-
-      return data.map(payment => ({
-        id: payment.id,
-        userId: payment.user_id,
-        razorpayPaymentId: payment.razorpay_payment_id,
-        razorpayOrderId: payment.razorpay_order_id,
-        razorpaySignature: payment.razorpay_signature,
-        amount: parseFloat(payment.amount),
-        currency: payment.currency,
-        status: payment.status,
-        paymentMethod: payment.payment_method,
-        subscriptionPlan: payment.subscription_plan,
-        subscriptionDays: payment.subscription_days,
-        subscriptionStartDate: payment.subscription_start_date ? new Date(payment.subscription_start_date) : undefined,
-        subscriptionEndDate: payment.subscription_end_date ? new Date(payment.subscription_end_date) : undefined,
-        description: payment.description,
-        errorMessage: payment.error_message,
-        createdAt: new Date(payment.created_at),
-        updatedAt: new Date(payment.updated_at)
-      }));
+      return querySnapshot.docs.map(docSnap => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          userId: data.userId,
+          razorpayPaymentId: data.razorpayPaymentId,
+          razorpayOrderId: data.razorpayOrderId,
+          razorpaySignature: data.razorpaySignature,
+          amount: parseFloat(data.amount),
+          currency: data.currency,
+          status: data.status,
+          paymentMethod: data.paymentMethod,
+          subscriptionPlan: data.subscriptionPlan,
+          subscriptionDays: data.subscriptionDays,
+          subscriptionStartDate: data.subscriptionStartDate ? new Date(data.subscriptionStartDate) : undefined,
+          subscriptionEndDate: data.subscriptionEndDate ? new Date(data.subscriptionEndDate) : undefined,
+          description: data.description,
+          errorMessage: data.errorMessage,
+          createdAt: new Date(data.createdAt),
+          updatedAt: new Date(data.updatedAt)
+        };
+      });
     } catch (error) {
       console.error('Error fetching payment history:', error);
       throw error;

@@ -1,4 +1,17 @@
-import { supabase } from '../config/supabase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  Timestamp
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 
 export interface GroupHead {
   id: string;
@@ -15,35 +28,43 @@ export interface GroupHead {
   updatedAt: Date;
 }
 
+// Helper to convert Firestore Timestamp to Date
+const toDate = (timestamp: Timestamp | string | undefined): Date => {
+  if (!timestamp) return new Date();
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  return new Date(timestamp);
+};
+
+// Helper to map Firestore data to GroupHead type
+const mapDocToGroupHead = (id: string, data: Record<string, unknown>): GroupHead => ({
+  id,
+  userId: data.userId as string,
+  groupHeadName: data.groupHeadName as string,
+  contactNo: data.contactNo as string,
+  emailId: data.emailId as string,
+  address: data.address as string,
+  relationshipType: data.relationshipType as string,
+  notes: data.notes as string,
+  totalPolicies: (data.totalPolicies as number) || 0,
+  totalPremiumAmount: parseFloat(String(data.totalPremiumAmount || 0)),
+  createdAt: toDate(data.createdAt as Timestamp | string),
+  updatedAt: toDate(data.updatedAt as Timestamp | string),
+});
+
 export const groupHeadService = {
   // Get all group heads for a user
   getGroupHeads: async (userId: string): Promise<GroupHead[]> => {
     try {
-      const { data, error } = await supabase
-        .from('group_heads')
-        .select('*')
-        .eq('user_id', userId)
-        .order('group_head_name', { ascending: true });
+      const q = query(
+        collection(db, COLLECTIONS.GROUP_HEADS),
+        where('userId', '==', userId),
+        orderBy('groupHeadName', 'asc')
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      return (data || []).map(row => ({
-        id: row.id,
-        userId: row.user_id,
-        groupHeadName: row.group_head_name,
-        contactNo: row.contact_no,
-        emailId: row.email_id,
-        address: row.address,
-        relationshipType: row.relationship_type,
-        notes: row.notes,
-        totalPolicies: row.total_policies || 0,
-        totalPremiumAmount: parseFloat(row.total_premium_amount || '0'),
-        createdAt: new Date(row.created_at),
-        updatedAt: new Date(row.updated_at),
-      }));
+      return querySnapshot.docs.map(docSnap => 
+        mapDocToGroupHead(docSnap.id, docSnap.data())
+      );
     } catch (error) {
       console.error('Error getting group heads:', error);
       throw error;
@@ -53,33 +74,11 @@ export const groupHeadService = {
   // Get a single group head by ID
   getGroupHeadById: async (id: string): Promise<GroupHead | null> => {
     try {
-      const { data, error } = await supabase
-        .from('group_heads')
-        .select('*')
-        .eq('id', id)
-        .single();
+      const docSnap = await getDoc(doc(db, COLLECTIONS.GROUP_HEADS, id));
 
-      if (error) {
-        if (error.code === 'PGRST116') return null;
-        throw error;
-      }
+      if (!docSnap.exists()) return null;
 
-      if (!data) return null;
-
-      return {
-        id: data.id,
-        userId: data.user_id,
-        groupHeadName: data.group_head_name,
-        contactNo: data.contact_no,
-        emailId: data.email_id,
-        address: data.address,
-        relationshipType: data.relationship_type,
-        notes: data.notes,
-        totalPolicies: data.total_policies || 0,
-        totalPremiumAmount: parseFloat(data.total_premium_amount || '0'),
-        createdAt: new Date(data.created_at),
-        updatedAt: new Date(data.updated_at),
-      };
+      return mapDocToGroupHead(docSnap.id, docSnap.data());
     } catch (error) {
       console.error('Error getting group head:', error);
       throw error;
@@ -89,26 +88,22 @@ export const groupHeadService = {
   // Add a new group head
   addGroupHead: async (groupHeadData: Omit<GroupHead, 'id' | 'createdAt' | 'updatedAt' | 'totalPolicies' | 'totalPremiumAmount'>): Promise<string> => {
     try {
-      const { data, error } = await supabase
-        .from('group_heads')
-        .insert([{
-          user_id: groupHeadData.userId,
-          group_head_name: groupHeadData.groupHeadName,
-          contact_no: groupHeadData.contactNo,
-          email_id: groupHeadData.emailId,
-          address: groupHeadData.address,
-          relationship_type: groupHeadData.relationshipType || 'Primary',
-          notes: groupHeadData.notes,
-        }])
-        .select()
-        .single();
+      const now = new Date().toISOString();
+      const docRef = await addDoc(collection(db, COLLECTIONS.GROUP_HEADS), {
+        userId: groupHeadData.userId,
+        groupHeadName: groupHeadData.groupHeadName,
+        contactNo: groupHeadData.contactNo || null,
+        emailId: groupHeadData.emailId || null,
+        address: groupHeadData.address || null,
+        relationshipType: groupHeadData.relationshipType || 'Primary',
+        notes: groupHeadData.notes || null,
+        totalPolicies: 0,
+        totalPremiumAmount: 0,
+        createdAt: now,
+        updatedAt: now,
+      });
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      return data.id;
+      return docRef.id;
     } catch (error) {
       console.error('Error adding group head:', error);
       throw error;
@@ -118,24 +113,18 @@ export const groupHeadService = {
   // Update a group head
   updateGroupHead: async (id: string, updates: Partial<GroupHead>): Promise<void> => {
     try {
-      const dbUpdates: Record<string, unknown> = {};
+      const updateData: Record<string, unknown> = {
+        updatedAt: new Date().toISOString(),
+      };
       
-      if (updates.groupHeadName !== undefined) dbUpdates.group_head_name = updates.groupHeadName;
-      if (updates.contactNo !== undefined) dbUpdates.contact_no = updates.contactNo;
-      if (updates.emailId !== undefined) dbUpdates.email_id = updates.emailId;
-      if (updates.address !== undefined) dbUpdates.address = updates.address;
-      if (updates.relationshipType !== undefined) dbUpdates.relationship_type = updates.relationshipType;
-      if (updates.notes !== undefined) dbUpdates.notes = updates.notes;
+      if (updates.groupHeadName !== undefined) updateData.groupHeadName = updates.groupHeadName;
+      if (updates.contactNo !== undefined) updateData.contactNo = updates.contactNo;
+      if (updates.emailId !== undefined) updateData.emailId = updates.emailId;
+      if (updates.address !== undefined) updateData.address = updates.address;
+      if (updates.relationshipType !== undefined) updateData.relationshipType = updates.relationshipType;
+      if (updates.notes !== undefined) updateData.notes = updates.notes;
 
-      const { error } = await supabase
-        .from('group_heads')
-        .update(dbUpdates)
-        .eq('id', id);
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
+      await updateDoc(doc(db, COLLECTIONS.GROUP_HEADS, id), updateData);
     } catch (error) {
       console.error('Error updating group head:', error);
       throw error;
@@ -145,15 +134,7 @@ export const groupHeadService = {
   // Delete a group head
   deleteGroupHead: async (id: string): Promise<void> => {
     try {
-      const { error } = await supabase
-        .from('group_heads')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
+      await deleteDoc(doc(db, COLLECTIONS.GROUP_HEADS, id));
     } catch (error) {
       console.error('Error deleting group head:', error);
       throw error;
@@ -163,18 +144,17 @@ export const groupHeadService = {
   // Get policies for a specific group head
   getGroupHeadPolicies: async (groupHeadId: string) => {
     try {
-      const { data, error } = await supabase
-        .from('policies')
-        .select('*')
-        .eq('member_of', groupHeadId)
-        .order('created_at', { ascending: false });
+      const q = query(
+        collection(db, COLLECTIONS.POLICIES),
+        where('memberOf', '==', groupHeadId),
+        orderBy('createdAt', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      return data || [];
+      return querySnapshot.docs.map(docSnap => ({
+        id: docSnap.id,
+        ...docSnap.data()
+      }));
     } catch (error) {
       console.error('Error getting group head policies:', error);
       throw error;
@@ -185,29 +165,25 @@ export const groupHeadService = {
   updateGroupHeadStats: async (groupHeadId: string): Promise<void> => {
     try {
       // Get all policies for this group head
-      const { data: policies, error: policiesError } = await supabase
-        .from('policies')
-        .select('premium_amount, net_premium, total_premium')
-        .eq('member_of', groupHeadId);
+      const q = query(
+        collection(db, COLLECTIONS.POLICIES),
+        where('memberOf', '==', groupHeadId)
+      );
+      const querySnapshot = await getDocs(q);
 
-      if (policiesError) throw policiesError;
-
-      const totalPolicies = policies?.length || 0;
-      const totalPremiumAmount = policies?.reduce((sum, policy) => {
-        const amount = parseFloat(policy.total_premium || policy.net_premium || policy.premium_amount || '0');
+      const policies = querySnapshot.docs.map(docSnap => docSnap.data());
+      const totalPolicies = policies.length;
+      const totalPremiumAmount = policies.reduce((sum, policy) => {
+        const amount = parseFloat(String(policy.totalPremium || policy.netPremium || policy.premiumAmount || 0));
         return sum + amount;
-      }, 0) || 0;
+      }, 0);
 
       // Update the group head
-      const { error: updateError } = await supabase
-        .from('group_heads')
-        .update({
-          total_policies: totalPolicies,
-          total_premium_amount: totalPremiumAmount,
-        })
-        .eq('id', groupHeadId);
-
-      if (updateError) throw updateError;
+      await updateDoc(doc(db, COLLECTIONS.GROUP_HEADS, groupHeadId), {
+        totalPolicies,
+        totalPremiumAmount,
+        updatedAt: new Date().toISOString(),
+      });
     } catch (error) {
       console.error('Error updating group head stats:', error);
       throw error;

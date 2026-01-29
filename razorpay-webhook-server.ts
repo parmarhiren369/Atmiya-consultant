@@ -7,7 +7,7 @@
 import dotenv from 'dotenv';
 import express from 'express';
 import crypto from 'crypto';
-import { createClient } from '@supabase/supabase-js';
+import admin from 'firebase-admin';
 import Razorpay from 'razorpay';
 
 // Load environment variables from .env.backend
@@ -30,14 +30,17 @@ const PORT = process.env.PORT || 3000;
 const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
 const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
 const RAZORPAY_WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET || '';
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_KEY = process.env.SUPABASE_SERVICE_KEY || ''; // Use service role key
+
+// Firebase Admin credentials
+const FIREBASE_PROJECT_ID = process.env.FIREBASE_PROJECT_ID || '';
+const FIREBASE_CLIENT_EMAIL = process.env.FIREBASE_CLIENT_EMAIL || '';
+const FIREBASE_PRIVATE_KEY = (process.env.FIREBASE_PRIVATE_KEY || '').replace(/\\n/g, '\n');
 
 console.log('🔧 Backend Configuration:');
 console.log('  Port:', PORT);
 console.log('  Razorpay Key ID:', RAZORPAY_KEY_ID ? `${RAZORPAY_KEY_ID.substring(0, 15)}...` : 'NOT SET');
 console.log('  Razorpay Secret:', RAZORPAY_KEY_SECRET ? '[SET]' : 'NOT SET');
-console.log('  Supabase URL:', SUPABASE_URL ? '[SET]' : 'NOT SET');
+console.log('  Firebase Project ID:', FIREBASE_PROJECT_ID ? '[SET]' : 'NOT SET');
 
 // Validate required environment variables
 if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
@@ -46,8 +49,8 @@ if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
   process.exit(1);
 }
 
-if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-  console.error('❌ ERROR: Supabase credentials not found!');
+if (!FIREBASE_PROJECT_ID || !FIREBASE_CLIENT_EMAIL || !FIREBASE_PRIVATE_KEY) {
+  console.error('❌ ERROR: Firebase Admin credentials not found!');
   console.error('   Please check your .env.backend file');
   process.exit(1);
 }
@@ -58,8 +61,26 @@ const razorpay = new Razorpay({
   key_secret: RAZORPAY_KEY_SECRET
 });
 
-// Initialize Supabase with service role key
-const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_KEY);
+// Initialize Firebase Admin
+if (!admin.apps.length) {
+  admin.initializeApp({
+    credential: admin.credential.cert({
+      projectId: FIREBASE_PROJECT_ID,
+      clientEmail: FIREBASE_CLIENT_EMAIL,
+      privateKey: FIREBASE_PRIVATE_KEY,
+    }),
+  });
+}
+
+const db = admin.firestore();
+
+// Collection names (matching frontend)
+const COLLECTIONS = {
+  USERS: 'users',
+  SUBSCRIPTION_PLANS: 'subscriptionPlans',
+  PAYMENT_HISTORY: 'paymentHistory',
+  USER_SUBSCRIPTIONS: 'userSubscriptions',
+};
 
 /**
  * Verify Razorpay signature
@@ -84,20 +105,22 @@ app.post('/api/create-razorpay-order', async (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    // Fetch plan details from database
-    const { data: plan, error: planError } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('name', planName)
-      .eq('is_active', true)
-      .single();
+    // Fetch plan details from Firestore
+    const plansSnapshot = await db.collection(COLLECTIONS.SUBSCRIPTION_PLANS)
+      .where('name', '==', planName)
+      .where('isActive', '==', true)
+      .limit(1)
+      .get();
 
-    if (planError || !plan) {
+    if (plansSnapshot.empty) {
       return res.status(404).json({ error: 'Plan not found' });
     }
 
+    const plan = plansSnapshot.docs[0].data();
+    const planId = plansSnapshot.docs[0].id;
+
     // Create Razorpay order
-    const amount = Math.round(parseFloat(plan.price_inr) * 100); // Convert to paise
+    const amount = Math.round(parseFloat(plan.priceInr) * 100); // Convert to paise
     // Generate short receipt ID (max 40 chars for Razorpay)
     const shortUserId = userId.substring(0, 8);
     const timestamp = Date.now().toString().slice(-10);
@@ -112,29 +135,24 @@ app.post('/api/create-razorpay-order', async (req, res) => {
       notes: {
         userId: userId,
         planName: planName,
-        planDays: plan.duration_days
+        planDays: plan.durationDays
       }
     });
     
     console.log('✅ Razorpay order created successfully:', order.id);
 
     // Save order to payment_history
-    const { error: paymentError } = await supabase
-      .from('payment_history')
-      .insert([{
-        user_id: userId,
-        razorpay_order_id: order.id,
-        amount: plan.price_inr,
-        currency: 'INR',
-        status: 'pending',
-        subscription_plan: planName,
-        subscription_days: plan.duration_days,
-        description: `Subscription payment for ${plan.display_name}`
-      }]);
-
-    if (paymentError) {
-      console.error('Error saving payment record:', paymentError);
-    }
+    await db.collection(COLLECTIONS.PAYMENT_HISTORY).add({
+      userId: userId,
+      razorpayOrderId: order.id,
+      amount: plan.priceInr,
+      currency: 'INR',
+      status: 'pending',
+      subscriptionPlan: planName,
+      subscriptionDays: plan.durationDays,
+      description: `Subscription payment for ${plan.displayName}`,
+      createdAt: new Date().toISOString(),
+    });
 
     res.json({
       success: true,
@@ -159,19 +177,21 @@ app.post('/api/create-subscription', async (req, res) => {
 
     console.log('Creating subscription for user:', userId, 'plan:', planName);
 
-    // Fetch plan details from database
-    const { data: plan, error: planError } = await supabase
-      .from('subscription_plans')
-      .select('*')
-      .eq('name', planName)
-      .eq('is_active', true)
-      .single();
+    // Fetch plan details from Firestore
+    const plansSnapshot = await db.collection(COLLECTIONS.SUBSCRIPTION_PLANS)
+      .where('name', '==', planName)
+      .where('isActive', '==', true)
+      .limit(1)
+      .get();
 
-    if (planError || !plan) {
+    if (plansSnapshot.empty) {
       return res.status(404).json({ error: 'Subscription plan not found' });
     }
 
-    if (!plan.razorpay_plan_id) {
+    const plan = plansSnapshot.docs[0].data();
+    const planId = plansSnapshot.docs[0].id;
+
+    if (!plan.razorpayPlanId) {
       return res.status(400).json({ error: 'Plan does not have Razorpay configuration' });
     }
 
@@ -187,9 +207,9 @@ app.post('/api/create-subscription', async (req, res) => {
     console.log('✅ Razorpay customer created:', customer.id);
 
     // Step 2: Create Razorpay subscription
-    const billingCycles = Math.ceil(plan.duration_days / 30);
+    const billingCycles = Math.ceil(plan.durationDays / 30);
     const subscriptionData = {
-      plan_id: plan.razorpay_plan_id,
+      plan_id: plan.razorpayPlanId,
       customer_id: customer.id,
       total_count: billingCycles,
       quantity: 1,
@@ -205,25 +225,18 @@ app.post('/api/create-subscription', async (req, res) => {
     const subscription = await razorpay.subscriptions.create(subscriptionData);
     console.log('✅ Razorpay subscription created:', subscription.id);
 
-    // Step 3: Store subscription in database
-    const { error: insertError } = await supabase
-      .from('user_subscriptions')
-      .insert({
-        user_id: userId,
-        razorpay_subscription_id: subscription.id,
-        razorpay_customer_id: customer.id,
-        plan_id: plan.id,
-        plan_name: planName,
-        status: 'created',
-        payment_url: subscription.short_url,
-        total_count: billingCycles,
-        created_at: new Date().toISOString(),
-      });
-
-    if (insertError) {
-      console.error('Error storing subscription:', insertError);
-      // Continue anyway - webhook will handle it
-    }
+    // Step 3: Store subscription in Firestore
+    await db.collection(COLLECTIONS.USER_SUBSCRIPTIONS).add({
+      userId: userId,
+      razorpaySubscriptionId: subscription.id,
+      razorpayCustomerId: customer.id,
+      planId: planId,
+      planName: planName,
+      status: 'created',
+      paymentUrl: subscription.short_url,
+      totalCount: billingCycles,
+      createdAt: new Date().toISOString(),
+    });
 
     // Step 4: Return subscription details
     res.json({
@@ -232,8 +245,8 @@ app.post('/api/create-subscription', async (req, res) => {
         id: subscription.id,
         status: subscription.status,
         paymentUrl: subscription.short_url,
-        planName: plan.display_name,
-        amount: plan.price_inr,
+        planName: plan.displayName,
+        amount: plan.priceInr,
         currency: plan.currency,
       },
     });
@@ -275,57 +288,48 @@ app.post('/api/razorpay-webhook', express.raw({ type: 'application/json' }), asy
 
       console.log('✅ Subscription activated:', subscriptionId);
 
-      // Get subscription record from database
-      const { data: subRecord, error: fetchError } = await supabase
-        .from('user_subscriptions')
-        .select('*, subscription_plans(*)')
-        .eq('razorpay_subscription_id', subscriptionId)
-        .single();
+      // Get subscription record from Firestore
+      const subSnapshot = await db.collection(COLLECTIONS.USER_SUBSCRIPTIONS)
+        .where('razorpaySubscriptionId', '==', subscriptionId)
+        .limit(1)
+        .get();
 
-      if (fetchError || !subRecord) {
+      if (subSnapshot.empty) {
         console.error('Subscription record not found:', subscriptionId);
         return res.status(404).json({ error: 'Subscription record not found' });
       }
 
-      // Update subscription status
-      const { error: updateSubError } = await supabase
-        .from('user_subscriptions')
-        .update({
-          status: 'active',
-          current_start: new Date(subscription.current_start * 1000).toISOString(),
-          current_end: new Date(subscription.current_end * 1000).toISOString(),
-          paid_count: subscription.paid_count,
-          activated_at: new Date().toISOString(),
-        })
-        .eq('razorpay_subscription_id', subscriptionId);
+      const subDoc = subSnapshot.docs[0];
+      const subRecord = subDoc.data();
 
-      if (updateSubError) {
-        console.error('Error updating subscription:', updateSubError);
-      }
+      // Get plan details
+      const planDoc = await db.collection(COLLECTIONS.SUBSCRIPTION_PLANS).doc(subRecord.planId).get();
+      const planData = planDoc.exists ? planDoc.data() : null;
+      const planDays = planData?.durationDays || 30;
+
+      // Update subscription status
+      await subDoc.ref.update({
+        status: 'active',
+        currentStart: new Date(subscription.current_start * 1000).toISOString(),
+        currentEnd: new Date(subscription.current_end * 1000).toISOString(),
+        paidCount: subscription.paid_count,
+        activatedAt: new Date().toISOString(),
+      });
 
       // Activate user's subscription
-      const planDays = subRecord.subscription_plans?.duration_days || 30;
       const startDate = new Date(subscription.current_start * 1000);
       const endDate = new Date(subscription.current_end * 1000);
 
-      const { error: userUpdateError } = await supabase
-        .from('users')
-        .update({
-          subscription_status: 'active',
-          subscription_start_date: startDate.toISOString(),
-          subscription_end_date: endDate.toISOString(),
-          subscription_plan: subRecord.plan_name,
-          payment_method: 'razorpay',
-          is_locked: false
-        })
-        .eq('id', subRecord.user_id);
+      await db.collection(COLLECTIONS.USERS).doc(subRecord.userId).update({
+        subscriptionStatus: 'active',
+        subscriptionStartDate: startDate.toISOString(),
+        subscriptionEndDate: endDate.toISOString(),
+        subscriptionPlan: subRecord.planName,
+        paymentMethod: 'razorpay',
+        isLocked: false
+      });
 
-      if (userUpdateError) {
-        console.error('Error activating user subscription:', userUpdateError);
-        return res.status(500).json({ error: 'Failed to activate subscription' });
-      }
-
-      console.log(`✅ Subscription activated for user ${subRecord.user_id}, plan: ${subRecord.plan_name}`);
+      console.log(`✅ Subscription activated for user ${subRecord.userId}, plan: ${subRecord.planName}`);
     }
 
     // Handle subscription.charged - recurring payment successful
@@ -337,35 +341,31 @@ app.post('/api/razorpay-webhook', express.raw({ type: 'application/json' }), asy
       console.log('💰 Subscription charged:', subscriptionId, 'Payment:', payment.id);
 
       // Get subscription record
-      const { data: subRecord } = await supabase
-        .from('user_subscriptions')
-        .select('*')
-        .eq('razorpay_subscription_id', subscriptionId)
-        .single();
+      const subSnapshot = await db.collection(COLLECTIONS.USER_SUBSCRIPTIONS)
+        .where('razorpaySubscriptionId', '==', subscriptionId)
+        .limit(1)
+        .get();
 
-      if (subRecord) {
+      if (!subSnapshot.empty) {
+        const subDoc = subSnapshot.docs[0];
+        const subRecord = subDoc.data();
+
         // Update subscription dates
-        await supabase
-          .from('user_subscriptions')
-          .update({
-            current_start: new Date(subscription.current_start * 1000).toISOString(),
-            current_end: new Date(subscription.current_end * 1000).toISOString(),
-            paid_count: subscription.paid_count,
-          })
-          .eq('razorpay_subscription_id', subscriptionId);
+        await subDoc.ref.update({
+          currentStart: new Date(subscription.current_start * 1000).toISOString(),
+          currentEnd: new Date(subscription.current_end * 1000).toISOString(),
+          paidCount: subscription.paid_count,
+        });
 
         // Extend user subscription
         const endDate = new Date(subscription.current_end * 1000);
-        await supabase
-          .from('users')
-          .update({
-            subscription_end_date: endDate.toISOString(),
-            subscription_status: 'active',
-            is_locked: false
-          })
-          .eq('id', subRecord.user_id);
+        await db.collection(COLLECTIONS.USERS).doc(subRecord.userId).update({
+          subscriptionEndDate: endDate.toISOString(),
+          subscriptionStatus: 'active',
+          isLocked: false
+        });
 
-        console.log(`✅ Subscription extended for user ${subRecord.user_id}`);
+        console.log(`✅ Subscription extended for user ${subRecord.userId}`);
       }
     }
 
@@ -376,32 +376,28 @@ app.post('/api/razorpay-webhook', express.raw({ type: 'application/json' }), asy
 
       console.log('❌ Subscription cancelled:', subscriptionId);
 
-      // Update subscription status
-      await supabase
-        .from('user_subscriptions')
-        .update({
+      // Get subscription record
+      const subSnapshot = await db.collection(COLLECTIONS.USER_SUBSCRIPTIONS)
+        .where('razorpaySubscriptionId', '==', subscriptionId)
+        .limit(1)
+        .get();
+
+      if (!subSnapshot.empty) {
+        const subDoc = subSnapshot.docs[0];
+        const subRecord = subDoc.data();
+
+        // Update subscription status
+        await subDoc.ref.update({
           status: 'cancelled',
-          cancelled_at: new Date().toISOString(),
-        })
-        .eq('razorpay_subscription_id', subscriptionId);
+          cancelledAt: new Date().toISOString(),
+        });
 
-      // Get subscription to update user
-      const { data: subRecord } = await supabase
-        .from('user_subscriptions')
-        .select('*')
-        .eq('razorpay_subscription_id', subscriptionId)
-        .single();
-
-      if (subRecord) {
         // Update user status to expired after current period ends
-        await supabase
-          .from('users')
-          .update({
-            subscription_status: 'cancelled', // Will expire when current_end passes
-          })
-          .eq('id', subRecord.user_id);
+        await db.collection(COLLECTIONS.USERS).doc(subRecord.userId).update({
+          subscriptionStatus: 'cancelled',
+        });
 
-        console.log(`❌ Subscription marked cancelled for user ${subRecord.user_id}`);
+        console.log(`❌ Subscription marked cancelled for user ${subRecord.userId}`);
       }
     }
 
@@ -412,12 +408,16 @@ app.post('/api/razorpay-webhook', express.raw({ type: 'application/json' }), asy
 
       console.log('✓ Subscription completed:', subscriptionId);
 
-      await supabase
-        .from('user_subscriptions')
-        .update({
+      const subSnapshot = await db.collection(COLLECTIONS.USER_SUBSCRIPTIONS)
+        .where('razorpaySubscriptionId', '==', subscriptionId)
+        .limit(1)
+        .get();
+
+      if (!subSnapshot.empty) {
+        await subSnapshot.docs[0].ref.update({
           status: 'completed',
-        })
-        .eq('razorpay_subscription_id', subscriptionId);
+        });
+      }
     }
 
     // ==========================================
@@ -431,63 +431,47 @@ app.post('/api/razorpay-webhook', express.raw({ type: 'application/json' }), asy
       const paymentId = payment.id;
 
       // Get order details from payment_history
-      const { data: paymentRecord, error: fetchError } = await supabase
-        .from('payment_history')
-        .select('*')
-        .eq('razorpay_order_id', orderId)
-        .single();
+      const paymentSnapshot = await db.collection(COLLECTIONS.PAYMENT_HISTORY)
+        .where('razorpayOrderId', '==', orderId)
+        .limit(1)
+        .get();
 
-      if (fetchError || !paymentRecord) {
+      if (paymentSnapshot.empty) {
         console.error('Payment record not found:', orderId);
         return res.status(404).json({ error: 'Payment record not found' });
       }
 
-      // Update payment record
-      const { error: updatePaymentError } = await supabase
-        .from('payment_history')
-        .update({
-          razorpay_payment_id: paymentId,
-          status: 'success',
-          payment_method: payment.method
-        })
-        .eq('razorpay_order_id', orderId);
+      const paymentDoc = paymentSnapshot.docs[0];
+      const paymentRecord = paymentDoc.data();
 
-      if (updatePaymentError) {
-        console.error('Error updating payment:', updatePaymentError);
-      }
+      // Update payment record
+      await paymentDoc.ref.update({
+        razorpayPaymentId: paymentId,
+        status: 'success',
+        paymentMethod: payment.method
+      });
 
       // Activate subscription for user
       const startDate = new Date();
       const endDate = new Date();
-      endDate.setDate(endDate.getDate() + paymentRecord.subscription_days);
+      endDate.setDate(endDate.getDate() + paymentRecord.subscriptionDays);
 
-      const { error: userUpdateError } = await supabase
-        .from('users')
-        .update({
-          subscription_status: 'active',
-          subscription_start_date: startDate.toISOString(),
-          subscription_end_date: endDate.toISOString(),
-          subscription_plan: paymentRecord.subscription_plan,
-          payment_method: 'razorpay',
-          is_locked: false
-        })
-        .eq('id', paymentRecord.user_id);
-
-      if (userUpdateError) {
-        console.error('Error activating subscription:', userUpdateError);
-        return res.status(500).json({ error: 'Failed to activate subscription' });
-      }
+      await db.collection(COLLECTIONS.USERS).doc(paymentRecord.userId).update({
+        subscriptionStatus: 'active',
+        subscriptionStartDate: startDate.toISOString(),
+        subscriptionEndDate: endDate.toISOString(),
+        subscriptionPlan: paymentRecord.subscriptionPlan,
+        paymentMethod: 'razorpay',
+        isLocked: false
+      });
 
       // Update payment history with subscription dates
-      await supabase
-        .from('payment_history')
-        .update({
-          subscription_start_date: startDate.toISOString(),
-          subscription_end_date: endDate.toISOString()
-        })
-        .eq('razorpay_order_id', orderId);
+      await paymentDoc.ref.update({
+        subscriptionStartDate: startDate.toISOString(),
+        subscriptionEndDate: endDate.toISOString()
+      });
 
-      console.log(`Subscription activated for user ${paymentRecord.user_id}`);
+      console.log(`Subscription activated for user ${paymentRecord.userId}`);
     }
 
     // Handle payment.failed event
@@ -495,14 +479,18 @@ app.post('/api/razorpay-webhook', express.raw({ type: 'application/json' }), asy
       const payment = event.payload.payment.entity;
       const orderId = payment.order_id;
 
-      await supabase
-        .from('payment_history')
-        .update({
-          razorpay_payment_id: payment.id,
+      const paymentSnapshot = await db.collection(COLLECTIONS.PAYMENT_HISTORY)
+        .where('razorpayOrderId', '==', orderId)
+        .limit(1)
+        .get();
+
+      if (!paymentSnapshot.empty) {
+        await paymentSnapshot.docs[0].ref.update({
+          razorpayPaymentId: payment.id,
           status: 'failed',
-          error_message: payment.error_description || 'Payment failed'
-        })
-        .eq('razorpay_order_id', orderId);
+          errorMessage: payment.error_description || 'Payment failed'
+        });
+      }
 
       console.log(`Payment failed for order ${orderId}`);
     }

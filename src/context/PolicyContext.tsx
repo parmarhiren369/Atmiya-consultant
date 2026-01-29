@@ -3,7 +3,8 @@ import { Policy, DeletedPolicy, ActivityLog } from '../types';
 import { policyService } from '../services/policyService';
 import { activityLogService } from '../services/activityLogService';
 import { deletedPolicyService } from '../services/deletedPolicyService';
-import { supabase } from '../config/supabase';
+import { signInWithEmailAndPassword } from 'firebase/auth';
+import { auth } from '../config/firebase';
 import { useAuth } from './AuthContext';
 import toast from 'react-hot-toast';
 
@@ -146,7 +147,7 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
       setLoading(true);
       
       // Delete from Firebase with user information
-      await policyService.deletePolicy(id, user?.userId, user?.displayName);
+      await policyService.deletePolicy(id, user?.id, user?.displayName);
       
       // Refresh all data
       await Promise.all([
@@ -173,7 +174,7 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
       // Get the old policy data
       const oldPolicy = policies.find(p => p.id === id);
       
-      await policyService.updatePolicy(id, updates, oldPolicy, user?.userId, user?.displayName);
+      await policyService.updatePolicy(id, updates, oldPolicy, user?.id, user?.displayName);
       
       // Update local state
       setPolicies(prev => 
@@ -212,7 +213,7 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       
-      await deletedPolicyService.restorePolicy(deletedPolicy, user?.userId, user?.displayName);
+      await deletedPolicyService.restorePolicy(deletedPolicy, user?.id, user?.displayName);
       
       // Refresh all data
       await Promise.all([
@@ -236,7 +237,7 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
     try {
       setLoading(true);
       
-      await deletedPolicyService.permanentlyDeletePolicy(deletedPolicyId, policyholderName, user?.userId, user?.displayName);
+      await deletedPolicyService.permanentlyDeletePolicy(deletedPolicyId, policyholderName, user?.id, user?.displayName);
       
       // Refresh deleted policies and activity logs
       await Promise.all([
@@ -255,7 +256,7 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Validate user password
+  // Validate user password using Firebase Auth
   const validateUserPassword = async (password: string): Promise<boolean> => {
     try {
       if (!user?.email) {
@@ -263,20 +264,11 @@ export function PolicyProvider({ children }: { children: ReactNode }) {
         return false;
       }
 
-      // Use Supabase Auth to verify password
-      const { error } = await supabase.auth.signInWithPassword({
-        email: user.email,
-        password: password,
-      });
-
-      if (error) {
-        console.error('Password validation error:', error);
-        return false;
-      }
-
+      // Use Firebase Auth to verify password by re-authenticating
+      await signInWithEmailAndPassword(auth, user.email, password);
       return true;
     } catch (error) {
-      console.error('Error validating password:', error);
+      console.error('Password validation error:', error);
       return false;
     }
   };

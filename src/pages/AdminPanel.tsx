@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { AppUser, SupabaseUserData } from '../types';
-import { supabase, TABLES } from '../config/supabase';
-import { supabaseAuthService } from '../services/supabaseAuthService';
+import { AppUser, FirebaseUserData } from '../types';
+import { db, COLLECTIONS } from '../config/firebase';
+import { collection, getDocs, doc, updateDoc, query, orderBy } from 'firebase/firestore';
+import { firebaseAuthService } from '../services/firebaseAuthService';
 import toast from 'react-hot-toast';
 import { 
   Users, Lock, Unlock, Calendar,
@@ -37,39 +38,36 @@ export function AdminPanel() {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from(TABLES.USERS)
-        .select('*')
-        .order('created_at', { ascending: false });
+      const usersRef = collection(db, COLLECTIONS.USERS);
+      const q = query(usersRef, orderBy('createdAt', 'desc'));
+      const snapshot = await getDocs(q);
 
-      if (error) {
-        console.error('Supabase error:', error);
-        throw error;
-      }
-
-      if (!data) {
+      if (snapshot.empty) {
         setUsers([]);
         return;
       }
 
-      const parsedUsers: AppUser[] = data.map((userData: SupabaseUserData) => ({
-        id: userData.id,
-        email: userData.email,
-        displayName: userData.display_name || 'Unknown User',
-        role: (userData.role === 'admin' ? 'admin' : 'user') as 'admin' | 'user',
-        isActive: userData.is_active ?? true,
-        createdAt: new Date(userData.created_at || Date.now()),
-        lastLogin: userData.last_login ? new Date(userData.last_login) : undefined,
-        subscriptionStatus: (userData.subscription_status || 'trial') as 'trial' | 'active' | 'expired' | 'locked',
-        trialStartDate: userData.trial_start_date ? new Date(userData.trial_start_date) : undefined,
-        trialEndDate: userData.trial_end_date ? new Date(userData.trial_end_date) : undefined,
-        subscriptionStartDate: userData.subscription_start_date ? new Date(userData.subscription_start_date) : undefined,
-        subscriptionEndDate: userData.subscription_end_date ? new Date(userData.subscription_end_date) : undefined,
-        isLocked: userData.is_locked ?? false,
-        lockedReason: userData.locked_reason,
-        lockedBy: userData.locked_by,
-        lockedAt: userData.locked_at ? new Date(userData.locked_at) : undefined,
-      }));
+      const parsedUsers: AppUser[] = snapshot.docs.map((docSnapshot) => {
+        const userData = docSnapshot.data() as FirebaseUserData;
+        return {
+          id: docSnapshot.id,
+          email: userData.email,
+          displayName: userData.displayName || userData.display_name || 'Unknown User',
+          role: (userData.role === 'admin' ? 'admin' : 'user') as 'admin' | 'user',
+          isActive: userData.isActive ?? userData.is_active ?? true,
+          createdAt: new Date(userData.createdAt || userData.created_at || Date.now()),
+          lastLogin: userData.lastLogin || userData.last_login ? new Date(userData.lastLogin || userData.last_login!) : undefined,
+          subscriptionStatus: (userData.subscriptionStatus || userData.subscription_status || 'trial') as 'trial' | 'active' | 'expired' | 'locked',
+          trialStartDate: userData.trialStartDate || userData.trial_start_date ? new Date(userData.trialStartDate || userData.trial_start_date!) : undefined,
+          trialEndDate: userData.trialEndDate || userData.trial_end_date ? new Date(userData.trialEndDate || userData.trial_end_date!) : undefined,
+          subscriptionStartDate: userData.subscriptionStartDate || userData.subscription_start_date ? new Date(userData.subscriptionStartDate || userData.subscription_start_date!) : undefined,
+          subscriptionEndDate: userData.subscriptionEndDate || userData.subscription_end_date ? new Date(userData.subscriptionEndDate || userData.subscription_end_date!) : undefined,
+          isLocked: userData.isLocked ?? userData.is_locked ?? false,
+          lockedReason: userData.lockedReason || userData.locked_reason,
+          lockedBy: userData.lockedBy || userData.locked_by,
+          lockedAt: userData.lockedAt || userData.locked_at ? new Date(userData.lockedAt || userData.locked_at!) : undefined,
+        };
+      });
 
       setUsers(parsedUsers);
     } catch (error) {
@@ -87,18 +85,14 @@ export function AdminPanel() {
     }
 
     try {
-      const { error } = await supabase
-        .from(TABLES.USERS)
-        .update({
-          is_locked: true,
-          locked_reason: lockReason,
-          locked_by: currentUser?.id,
-          locked_at: new Date().toISOString(),
-          subscription_status: 'locked'
-        })
-        .eq('id', selectedUser.id);
-
-      if (error) throw error;
+      const userRef = doc(db, COLLECTIONS.USERS, selectedUser.id);
+      await updateDoc(userRef, {
+        isLocked: true,
+        lockedReason: lockReason,
+        lockedBy: currentUser?.id,
+        lockedAt: new Date().toISOString(),
+        subscriptionStatus: 'locked'
+      });
 
       toast.success(`User ${selectedUser.displayName} locked successfully`);
       setShowModal(false);
@@ -124,18 +118,14 @@ export function AdminPanel() {
         newStatus = 'active';
       }
 
-      const { error } = await supabase
-        .from(TABLES.USERS)
-        .update({
-          is_locked: false,
-          locked_reason: null,
-          locked_by: null,
-          locked_at: null,
-          subscription_status: newStatus
-        })
-        .eq('id', selectedUser.id);
-
-      if (error) throw error;
+      const userRef = doc(db, COLLECTIONS.USERS, selectedUser.id);
+      await updateDoc(userRef, {
+        isLocked: false,
+        lockedReason: null,
+        lockedBy: null,
+        lockedAt: null,
+        subscriptionStatus: newStatus
+      });
 
       toast.success(`User ${selectedUser.displayName} unlocked successfully`);
       setShowModal(false);
@@ -157,17 +147,13 @@ export function AdminPanel() {
       const endDate = new Date();
       endDate.setDate(endDate.getDate() + subscriptionDays);
 
-      const { error } = await supabase
-        .from(TABLES.USERS)
-        .update({
-          subscription_status: 'active',
-          subscription_start_date: startDate.toISOString(),
-          subscription_end_date: endDate.toISOString(),
-          is_locked: false
-        })
-        .eq('id', selectedUser.id);
-
-      if (error) throw error;
+      const userRef = doc(db, COLLECTIONS.USERS, selectedUser.id);
+      await updateDoc(userRef, {
+        subscriptionStatus: 'active',
+        subscriptionStartDate: startDate.toISOString(),
+        subscriptionEndDate: endDate.toISOString(),
+        isLocked: false
+      });
 
       toast.success(`Subscription activated for ${selectedUser.displayName} (${subscriptionDays} days)`);
       setShowModal(false);
@@ -194,15 +180,11 @@ export function AdminPanel() {
       
       newEndDate.setDate(newEndDate.getDate() + subscriptionDays);
 
-      const { error } = await supabase
-        .from(TABLES.USERS)
-        .update({
-          subscription_end_date: newEndDate.toISOString(),
-          subscription_status: 'active'
-        })
-        .eq('id', selectedUser.id);
-
-      if (error) throw error;
+      const userRef = doc(db, COLLECTIONS.USERS, selectedUser.id);
+      await updateDoc(userRef, {
+        subscriptionEndDate: newEndDate.toISOString(),
+        subscriptionStatus: 'active'
+      });
 
       toast.success(`Subscription extended for ${selectedUser.displayName} (+${subscriptionDays} days)`);
       setShowModal(false);
@@ -220,7 +202,7 @@ export function AdminPanel() {
   };
 
   const getStatusBadge = (user: AppUser) => {
-    const daysRemaining = supabaseAuthService.getDaysRemaining(user);
+    const daysRemaining = firebaseAuthService.getDaysRemaining(user);
     
     const badges = {
       trial: {
@@ -418,7 +400,7 @@ export function AdminPanel() {
                   </tr>
                 ) : (
                   filteredUsers.map((user) => {
-                    const daysRemaining = supabaseAuthService.getDaysRemaining(user);
+                    const daysRemaining = firebaseAuthService.getDaysRemaining(user);
                     const endDate = user.subscriptionStatus === 'trial' ? user.trialEndDate : user.subscriptionEndDate;
 
                     return (

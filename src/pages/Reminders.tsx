@@ -2,12 +2,13 @@ import React, { useMemo } from 'react';
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { usePolicies } from '../context/PolicyContext';
+import { useAuth } from '../context/AuthContext';
 import { Policy } from '../types';
 import { AlertTriangle, Calendar, Clock, Building, MessageCircle, FileX, Eye, RefreshCw, FileText, StickyNote, Printer } from 'lucide-react';
 import { format, differenceInDays, isAfter, isBefore, addDays } from 'date-fns';
 import toast from 'react-hot-toast';
 import { markPolicyAsLapsed } from '../services';
-import { supabase } from '../config/supabase';
+import { groupHeadService } from '../services/groupHeadService';
 
 // Helper function to safely format dates
 const safeFormatDate = (dateValue: string | Date | undefined | null, formatString: string, fallback: string = 'N/A'): string => {
@@ -35,6 +36,7 @@ const safeFormatDate = (dateValue: string | Date | undefined | null, formatStrin
 
 export function Reminders() {
   const { policies, loading, error, refreshPolicies, deletePolicy } = usePolicies();
+  const { user } = useAuth();
   const [showReminderModal, setShowReminderModal] = useState(false);
   const [selectedPolicy, setSelectedPolicy] = useState<(Policy & { daysRemaining: number }) | null>(null);
   const [showLapsedReasonModal, setShowLapsedReasonModal] = useState(false);
@@ -52,21 +54,17 @@ export function Reminders() {
   // Fetch group heads
   useEffect(() => {
     const fetchGroupHeads = async () => {
+      if (!user) return;
       try {
-        const { data, error} = await supabase
-          .from('group_heads')
-          .select('*')
-          .order('group_head_name');
-        
-        if (error) throw error;
-        setGroupHeads(data || []);
+        const heads = await groupHeadService.getGroupHeads(user.id);
+        setGroupHeads(heads || []);
       } catch (error) {
         console.error('Error fetching group heads:', error);
       }
     };
     
     fetchGroupHeads();
-  }, []);
+  }, [user]);
   
   const handlePrint = () => {
     setShowPrintModal(true);
@@ -82,7 +80,7 @@ export function Reminders() {
   
   const getGroupHeadName = (memberId: string) => {
     const groupHead = groupHeads.find(gh => gh.id === memberId);
-    return groupHead?.group_head_name || null;
+    return groupHead?.groupHeadName || null;
   };
   
   // Function to view policy details

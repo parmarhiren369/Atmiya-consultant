@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Navigate, useNavigate, useLocation } from 'react-router-dom';
-import { supabaseAuthService } from '../services/supabaseAuthService';
+import { firebaseAuthService } from '../services/firebaseAuthService';
 import { AlertTriangle, XCircle, Clock, CreditCard } from 'lucide-react';
 import toast from 'react-hot-toast';
 
@@ -49,7 +49,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
       }
 
       // Check if user can access the system
-      const canAccess = supabaseAuthService.canAccessSystem(user);
+      const canAccess = firebaseAuthService.canAccessSystem(user);
       
       if (!canAccess) {
         // User is expired or locked
@@ -64,7 +64,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
       }
 
       // Check remaining days and show warning if needed
-      const remaining = supabaseAuthService.getDaysRemaining(user);
+      const remaining = firebaseAuthService.getDaysRemaining(user);
 
       if (remaining <= 5 && remaining > 0) {
         setShowWarning(true);
@@ -135,7 +135,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
 
   // Check if subscription is expired (not admin)
   // Check subscription expiry (only for regular users, not team members or admins)
-  if (user && user.role !== 'admin' && !supabaseAuthService.canAccessSystem(user)) {
+  if (user && user.role !== 'admin' && !firebaseAuthService.canAccessSystem(user)) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
         <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-8 text-center">

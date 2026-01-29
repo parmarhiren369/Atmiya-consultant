@@ -1,23 +1,24 @@
 {
   "name": "onclicks-policy-manager",
   "private": true,
-  "version": "1.0.0",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "upload-passwords": "node upload-passwords.js"
+    "start:backend": "npx tsx razorpay-webhook-server.ts"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.89.0",
     "@types/express": "^5.0.6",
     "bcryptjs": "^2.4.3",
     "chart.js": "^4.5.0",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "firebase": "^12.8.0",
+    "firebase-admin": "^13.6.0",
     "lucide-react": "^0.344.0",
     "razorpay": "^2.9.6",
     "react": "^18.3.1",

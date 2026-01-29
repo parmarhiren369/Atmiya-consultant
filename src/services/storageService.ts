@@ -1,389 +1,247 @@
-import { supabase } from '../config/supabase';
-import toast from 'react-hot-toast';
+import { 
+  ref, 
+  uploadBytes, 
+  getDownloadURL, 
+  deleteObject, 
+  listAll,
+  getMetadata 
+} from 'firebase/storage';
+import { storage } from '../config/firebase';
 
-const CLIENT_DOCS_BUCKET = 'client-documents'; // Single bucket for all documents (policy PDFs and client docs)
+interface FileMetadata {
+  name: string;
+  size: number;
+  contentType: string;
+  timeCreated: string;
+  updated: string;
+  fullPath: string;
+}
 
-/**
- * Storage Service for handling PDF uploads to Supabase
- */
+interface UploadedFile {
+  name: string;
+  url: string;
+  path: string;
+}
+
 export const storageService = {
   /**
-   * Initialize the storage bucket (create if doesn't exist)
-   * Single bucket for all documents (policy PDFs and client documents)
+   * Upload a file to Firebase Storage
+   * @param file The file to upload
+   * @param userId The user's ID
+   * @param bucket The storage bucket/folder (e.g., 'policy-documents', 'client-documents')
+   * @param subfolder Optional subfolder path
+   * @returns The uploaded file info with URL
    */
-  async initializeBucket() {
+  uploadFile: async (
+    file: File,
+    userId: string,
+    bucket: string = 'documents',
+    subfolder?: string
+  ): Promise<UploadedFile> => {
     try {
-      // Check if bucket exists
-      const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-      
-      if (listError) {
-        console.error('Error listing buckets:', listError);
-        return false;
-      }
-
-      // Initialize client documents bucket (used for all documents)
-      const bucketExists = buckets?.some(bucket => bucket.name === CLIENT_DOCS_BUCKET);
-      if (!bucketExists) {
-        const { error: createError } = await supabase.storage.createBucket(CLIENT_DOCS_BUCKET, {
-          public: true,
-          fileSizeLimit: 10485760, // 10MB limit
-          allowedMimeTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']
-        });
-
-        if (createError) {
-          console.error('Error creating client documents bucket:', createError);
-        } else {
-          console.log(`✅ Bucket '${CLIENT_DOCS_BUCKET}' created successfully`);
-        }
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error initializing bucket:', error);
-      return false;
-    }
-  },
-
-  /**
-   * Upload a PDF file to Supabase storage (now uses client-documents bucket)
-   * @param file The PDF file to upload
-   * @param userId User ID for organizing files
-   * @param clientName Optional client name for folder organization
-   * @param clientId Optional unique identifier
-   * @returns The public URL of the uploaded file or null if failed
-   */
-  async uploadPDF(file: File, userId: string, clientName?: string, clientId?: string): Promise<{ url: string; path: string } | null> {
-    try {
-      // Validate file type
-      if (file.type !== 'application/pdf') {
-        toast.error('Only PDF files are allowed');
-        return null;
-      }
-
-      // Validate file size (10MB limit)
-      if (file.size > 10485760) {
-        toast.error('File size must be less than 10MB');
-        return null;
-      }
-
-      // Generate unique filename with optional client folder
+      // Create a unique filename
       const timestamp = Date.now();
-      const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+      const fileName = `${timestamp}_${sanitizedName}`;
       
-      let filePath: string;
-      if (clientName && clientId) {
-        const sanitizedClientName = clientName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-        const folderName = `${clientId}_${sanitizedClientName}`;
-        filePath = `${userId}/${folderName}/${timestamp}_${sanitizedFileName}`;
-      } else {
-        filePath = `${userId}/${timestamp}_${sanitizedFileName}`;
+      // Build the storage path
+      let storagePath = `${userId}/${bucket}`;
+      if (subfolder) {
+        storagePath += `/${subfolder}`;
       }
+      storagePath += `/${fileName}`;
 
-      // Upload file to client-documents bucket
-      const { error } = await supabase.storage
-        .from(CLIENT_DOCS_BUCKET)
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
-        });
+      // Create a reference to the file location
+      const fileRef = ref(storage, storagePath);
 
-      if (error) {
-        console.error('Error uploading file:', error);
-        toast.error(`Upload failed: ${error.message}`);
-        return null;
-      }
+      // Upload the file
+      const snapshot = await uploadBytes(fileRef, file, {
+        contentType: file.type,
+        customMetadata: {
+          originalName: file.name,
+          uploadedAt: new Date().toISOString(),
+        },
+      });
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from(CLIENT_DOCS_BUCKET)
-        .getPublicUrl(filePath);
+      // Get the download URL
+      const downloadURL = await getDownloadURL(snapshot.ref);
+
+      console.log(`File uploaded successfully: ${storagePath}`);
 
       return {
-        url: urlData.publicUrl,
-        path: filePath
+        name: file.name,
+        url: downloadURL,
+        path: storagePath,
       };
     } catch (error) {
-      console.error('Error in uploadPDF:', error);
-      toast.error('Failed to upload file');
-      return null;
+      console.error('Error uploading file:', error);
+      throw new Error('Failed to upload file');
     }
   },
 
   /**
-   * Upload multiple PDF files
-   * @param files Array of PDF files to upload
-   * @param userId User ID for organizing files
-   * @returns Array of upload results
+   * Upload a policy document
    */
-  async uploadMultiplePDFs(files: File[], userId: string): Promise<Array<{ url: string; path: string; fileName: string } | null>> {
-    const uploadPromises = files.map(async (file) => {
-      const result = await this.uploadPDF(file, userId);
-      if (result) {
-        return { ...result, fileName: file.name };
-      }
-      return null;
-    });
-
-    return Promise.all(uploadPromises);
-  },
-
-  /**
-   * Delete a file from Supabase storage
-   * @param filePath The path of the file to delete
-   * @returns True if successful, false otherwise
-   */
-  async deleteFile(filePath: string): Promise<boolean> {
-    try {
-      const { error } = await supabase.storage
-        .from(CLIENT_DOCS_BUCKET)
-        .remove([filePath]);
-
-      if (error) {
-        console.error('Error deleting file:', error);
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      console.error('Error in deleteFile:', error);
-      return false;
-    }
-  },
-
-  /**
-   * Get a signed URL for a private file (valid for 1 hour)
-   * @param filePath The path of the file
-   * @returns The signed URL or null if failed
-   */
-  async getSignedUrl(filePath: string): Promise<string | null> {
-    try {
-      const { data, error } = await supabase.storage
-        .from(CLIENT_DOCS_BUCKET)
-        .createSignedUrl(filePath, 3600); // 1 hour
-
-      if (error) {
-        console.error('Error creating signed URL:', error);
-        return null;
-      }
-
-      return data.signedUrl;
-    } catch (error) {
-      console.error('Error in getSignedUrl:', error);
-      return null;
-    }
+  uploadPolicyDocument: async (
+    file: File,
+    userId: string,
+    policyholderName: string,
+    policyNumber: string
+  ): Promise<UploadedFile> => {
+    const sanitizedName = policyholderName.replace(/[^a-zA-Z0-9]/g, '_');
+    const subfolder = `${sanitizedName}/${policyNumber}`;
+    return storageService.uploadFile(file, userId, 'policy-documents', subfolder);
   },
 
   /**
    * Get public URL for a file
-   * @param filePath The path of the file
-   * @returns The public URL
    */
-  getPublicUrl(filePath: string): string {
-    const { data } = supabase.storage
-      .from(CLIENT_DOCS_BUCKET)
-      .getPublicUrl(filePath);
-
-    return data.publicUrl;
+  getPublicUrl: async (filePath: string): Promise<string> => {
+    try {
+      const fileRef = ref(storage, filePath);
+      return await getDownloadURL(fileRef);
+    } catch (error) {
+      console.error('Error getting public URL:', error);
+      throw new Error('Failed to get file URL');
+    }
   },
 
   /**
-   * Upload a client document to Supabase storage
-   * @param file The file to upload (PDF, images, Word docs)
-   * @param userId User ID for organizing files
-   * @param clientName Client/Policyholder name for organizing files
-   * @param clientId Unique client identifier (policy ID) to prevent duplicate name conflicts
-   * @returns The public URL of the uploaded file or null if failed
+   * Delete a file from storage
    */
-  async uploadClientDocument(file: File, userId: string, clientName?: string, clientId?: string): Promise<{ url: string; path: string } | null> {
+  deleteFile: async (filePath: string): Promise<void> => {
     try {
-      // Validate file type
-      const allowedTypes = [
-        'application/pdf',
-        'image/jpeg',
-        'image/png',
-        'image/jpg',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      ];
+      const fileRef = ref(storage, filePath);
+      await deleteObject(fileRef);
+      console.log(`File deleted successfully: ${filePath}`);
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      throw new Error('Failed to delete file');
+    }
+  },
 
-      if (!allowedTypes.includes(file.type)) {
-        toast.error('File type not supported. Allowed: PDF, JPG, PNG, DOC, DOCX');
-        return null;
-      }
-
-      // Validate file size (10MB limit)
-      if (file.size > 10485760) {
-        toast.error('File size must be less than 10MB');
-        return null;
-      }
-
-      // Generate unique filename with client folder structure
-      // Use clientId_clientName format to ensure uniqueness even with duplicate names
-      const timestamp = Date.now();
-      const sanitizedFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-      const sanitizedClientName = clientName 
-        ? clientName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
-        : 'general';
-      const folderName = clientId 
-        ? `${clientId}_${sanitizedClientName}`
-        : sanitizedClientName;
-      const filePath = `${userId}/${folderName}/${timestamp}_${sanitizedFileName}`;
-
-      // Upload file to client documents bucket
-      const { error } = await supabase.storage
-        .from(CLIENT_DOCS_BUCKET)
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false
+  /**
+   * Delete multiple files from storage
+   */
+  deleteFiles: async (filePaths: string[]): Promise<void> => {
+    try {
+      const deletePromises = filePaths.map(path => {
+        const fileRef = ref(storage, path);
+        return deleteObject(fileRef).catch(err => {
+          console.warn(`Failed to delete file ${path}:`, err);
         });
+      });
 
-      if (error) {
-        console.error('Error uploading client document:', error);
-        toast.error(`Upload failed: ${error.message}`);
-        return null;
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from(CLIENT_DOCS_BUCKET)
-        .getPublicUrl(filePath);
-
-      return {
-        url: urlData.publicUrl,
-        path: filePath
-      };
+      await Promise.all(deletePromises);
+      console.log(`${filePaths.length} files deleted successfully`);
     } catch (error) {
-      console.error('Error in uploadClientDocument:', error);
-      toast.error('Failed to upload file');
-      return null;
+      console.error('Error deleting files:', error);
+      throw new Error('Failed to delete files');
     }
   },
 
   /**
-   * Upload multiple client documents
-   * @param files Array of files to upload
-   * @param userId User ID for organizing files
-   * @param clientName Client/Policyholder name for organizing files
-   * @param clientId Unique client identifier (policy ID)
-   * @returns Array of upload results
+   * List all files in a folder
    */
-  async uploadMultipleClientDocuments(files: File[], userId: string, clientName?: string, clientId?: string): Promise<Array<{ url: string; path: string; fileName: string } | null>> {
-    const uploadPromises = files.map(async (file) => {
-      const result = await this.uploadClientDocument(file, userId, clientName, clientId);
-      if (result) {
-        return { ...result, fileName: file.name };
-      }
-      return null;
-    });
-
-    return Promise.all(uploadPromises);
-  },
-
-  /**
-   * Delete a client document from Supabase storage
-   * @param filePath The path of the file to delete
-   * @returns True if successful, false otherwise
-   */
-  async deleteClientDocument(filePath: string): Promise<boolean> {
+  listFiles: async (folderPath: string): Promise<FileMetadata[]> => {
     try {
-      const { error } = await supabase.storage
-        .from(CLIENT_DOCS_BUCKET)
-        .remove([filePath]);
+      const folderRef = ref(storage, folderPath);
+      const result = await listAll(folderRef);
 
-      if (error) {
-        console.error('Error deleting client document:', error);
-        return false;
-      }
+      const fileMetadataPromises = result.items.map(async (itemRef) => {
+        const metadata = await getMetadata(itemRef);
+        return {
+          name: metadata.name,
+          size: metadata.size,
+          contentType: metadata.contentType || 'application/octet-stream',
+          timeCreated: metadata.timeCreated,
+          updated: metadata.updated,
+          fullPath: metadata.fullPath,
+        };
+      });
 
-      return true;
+      return Promise.all(fileMetadataPromises);
     } catch (error) {
-      console.error('Error in deleteClientDocument:', error);
-      return false;
+      console.error('Error listing files:', error);
+      throw new Error('Failed to list files');
     }
   },
 
   /**
-   * Get public URL for a client document
-   * @param filePath The path of the file
-   * @returns The public URL
+   * List user's files in a specific bucket
    */
-  getClientDocumentPublicUrl(filePath: string): string {
-    const { data } = supabase.storage
-      .from(CLIENT_DOCS_BUCKET)
-      .getPublicUrl(filePath);
-
-    return data.publicUrl;
-  },
-
-  /**
-   * List all files in a user's folder
-   * @param userId User ID
-   * @param bucketName Bucket name (client-documents or policy-documents)
-   * @param clientName Optional client name to filter files by specific customer
-   * @param clientId Optional client ID to ensure uniqueness
-   * @returns Array of files with metadata
-   */
-  async listUserFiles(userId: string, bucketName: string = CLIENT_DOCS_BUCKET, clientName?: string, clientId?: string): Promise<Array<{
-    name: string;
-    path: string;
-    url: string;
-    size: number;
-    created_at: string;
-  }>> {
+  listUserFiles: async (
+    userId: string,
+    bucket: string = 'documents',
+    policyholderName?: string,
+    policyNumber?: string
+  ): Promise<{ name: string; url: string; path: string }[]> => {
     try {
-      const sanitizedClientName = clientName 
-        ? clientName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()
-        : null;
+      let folderPath = `${userId}/${bucket}`;
       
-      const folderName = clientId && sanitizedClientName
-        ? `${clientId}_${sanitizedClientName}`
-        : sanitizedClientName;
-
-      const folderPath = folderName 
-        ? `${userId}/${folderName}`
-        : userId;
-
-      const { data, error } = await supabase.storage
-        .from(bucketName)
-        .list(folderPath, {
-          limit: 100,
-          offset: 0,
-          sortBy: { column: 'created_at', order: 'desc' }
-        });
-
-      if (error) {
-        console.error('Error listing files:', error);
-        return [];
+      if (policyholderName) {
+        const sanitizedName = policyholderName.replace(/[^a-zA-Z0-9]/g, '_');
+        folderPath += `/${sanitizedName}`;
+        
+        if (policyNumber) {
+          folderPath += `/${policyNumber}`;
+        }
       }
 
-      if (!data || data.length === 0) {
-        return [];
-      }
+      const folderRef = ref(storage, folderPath);
+      const result = await listAll(folderRef);
 
-      // Get public URLs for all files
-      return data
-        .filter(file => file.name !== '.emptyFolderPlaceholder') // Filter out placeholder files
-        .map(file => {
-          const filePath = folderName 
-            ? `${userId}/${folderName}/${file.name}`
-            : `${userId}/${file.name}`;
-          const { data: urlData } = supabase.storage
-            .from(bucketName)
-            .getPublicUrl(filePath);
+      const filesPromises = result.items.map(async (itemRef) => {
+        const url = await getDownloadURL(itemRef);
+        const metadata = await getMetadata(itemRef);
+        return {
+          name: metadata.customMetadata?.originalName || metadata.name,
+          url,
+          path: metadata.fullPath,
+        };
+      });
 
-          return {
-            name: file.name,
-            path: filePath,
-            url: urlData.publicUrl,
-            size: file.metadata?.size || 0,
-            created_at: file.created_at || new Date().toISOString()
-          };
-        });
+      return Promise.all(filesPromises);
     } catch (error) {
-      console.error('Error in listUserFiles:', error);
+      console.error('Error listing user files:', error);
+      // Return empty array instead of throwing - folder might not exist yet
       return [];
     }
-  }
-};
+  },
 
-export default storageService;
+  /**
+   * Upload client document
+   */
+  uploadClientDocument: async (
+    file: File,
+    userId: string,
+    clientName: string,
+    policyNumber: string
+  ): Promise<UploadedFile> => {
+    const sanitizedClientName = clientName.replace(/[^a-zA-Z0-9]/g, '_');
+    const subfolder = `${sanitizedClientName}/${policyNumber}`;
+    return storageService.uploadFile(file, userId, 'client-documents', subfolder);
+  },
+
+  /**
+   * Get file metadata
+   */
+  getFileMetadata: async (filePath: string): Promise<FileMetadata | null> => {
+    try {
+      const fileRef = ref(storage, filePath);
+      const metadata = await getMetadata(fileRef);
+      
+      return {
+        name: metadata.name,
+        size: metadata.size,
+        contentType: metadata.contentType || 'application/octet-stream',
+        timeCreated: metadata.timeCreated,
+        updated: metadata.updated,
+        fullPath: metadata.fullPath,
+      };
+    } catch (error) {
+      console.error('Error getting file metadata:', error);
+      return null;
+    }
+  },
+};

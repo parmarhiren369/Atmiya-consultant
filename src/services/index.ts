@@ -5,6 +5,10 @@ export { activityLogService } from './activityLogService';
 export { userService } from './userService';
 export { markPolicyAsLapsed, getLapsedPolicies, getLapsedPolicyById, removeLapsedPolicy } from './lapsedPolicyService';
 export { razorpayService } from './razorpayService';
-export { supabaseAuthService } from './supabaseAuthService';
+export { firebaseAuthService } from './firebaseAuthService';
 export { taskService } from './taskService';
-
+export { teamMemberService } from './teamMemberService';
+export { leadService } from './leadService';
+export { storageService } from './storageService';
+export { groupHeadService } from './groupHeadService';
+export { policyDeletionRequestService } from './policyDeletionRequestService';

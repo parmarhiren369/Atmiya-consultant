@@ -1,44 +1,87 @@
-import { supabase } from '../config/supabase';
+import { 
+  collection, 
+  doc, 
+  getDocs, 
+  getDoc, 
+  addDoc, 
+  deleteDoc, 
+  query, 
+  where, 
+  orderBy,
+  Timestamp
+} from 'firebase/firestore';
+import { db, COLLECTIONS } from '../config/firebase';
 import { LapsedPolicy, Policy } from '../types';
+
+// Helper to convert Firestore Timestamp to Date
+const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => {
+  if (!timestamp) return undefined;
+  if (timestamp instanceof Timestamp) return timestamp.toDate();
+  return new Date(timestamp);
+};
+
+// Helper to map Firestore data to LapsedPolicy type
+const mapDocToLapsedPolicy = (id: string, data: Record<string, unknown>): LapsedPolicy => ({
+  id,
+  userId: data.userId as string,
+  policyholderName: data.policyholderName as string,
+  contactNo: data.contactNo as string,
+  emailId: data.emailId as string,
+  address: data.address as string,
+  policyNumber: data.policyNumber as string,
+  insuranceCompany: data.insuranceCompany as string,
+  policyType: data.policyType as string,
+  premiumAmount: data.premiumAmount as number,
+  coverageAmount: data.coverageAmount as number,
+  policyStartDate: toDate(data.policyStartDate as Timestamp | string),
+  policyEndDate: toDate(data.policyEndDate as Timestamp | string),
+  premiumDueDate: toDate(data.premiumDueDate as Timestamp | string),
+  startDate: data.startDate as string || (data.policyStartDate as string),
+  expiryDate: data.expiryDate as string || (data.policyEndDate as string),
+  status: data.status as string,
+  paymentFrequency: data.paymentFrequency as string,
+  nomineeName: data.nomineeName as string,
+  nomineeRelationship: data.nomineeRelationship as string,
+  notes: data.notes as string,
+  documents: (data.documents as string[]) || [],
+  lapsedAt: toDate(data.lapsedAt as Timestamp | string) || new Date(),
+  lapsedReason: data.lapsedReason as string,
+  createdAt: toDate(data.createdAt as Timestamp | string) || new Date(),
+  updatedAt: toDate(data.updatedAt as Timestamp | string) || new Date(),
+});
 
 export const markPolicyAsLapsed = async (policy: Policy, reason?: string): Promise<string> => {
   try {
-    const { data, error} = await supabase
-      .from('lapsed_policies')
-      .insert([{
-        original_policy_id: policy.id,
-        user_id: policy.userId,
-        policyholder_name: policy.policyholderName,
-        contact_no: policy.contactNo,
-        email_id: policy.emailId,
-        address: policy.address,
-        policy_number: policy.policyNumber,
-        insurance_company: policy.insuranceCompany,
-        policy_type: policy.policyType,
-        premium_amount: policy.premiumAmount,
-        coverage_amount: policy.coverageAmount,
-        policy_start_date: policy.policyStartDate,
-        policy_end_date: policy.policyEndDate,
-        premium_due_date: policy.premiumDueDate,
-        status: policy.status,
-        payment_frequency: policy.paymentFrequency,
-        nominee_name: policy.nomineeName,
-        nominee_relationship: policy.nomineeRelationship,
-        notes: policy.notes,
-        documents: policy.documents,
-        lapsed_reason: reason || '',
-        created_at: policy.createdAt,
-        updated_at: policy.updatedAt,
-      }])
-      .select()
-      .single();
+    const now = new Date().toISOString();
+    const lapsedData = {
+      originalPolicyId: policy.id,
+      userId: policy.userId,
+      policyholderName: policy.policyholderName,
+      contactNo: policy.contactNo,
+      emailId: policy.emailId,
+      address: policy.address,
+      policyNumber: policy.policyNumber,
+      insuranceCompany: policy.insuranceCompany,
+      policyType: policy.policyType,
+      premiumAmount: policy.premiumAmount,
+      coverageAmount: policy.coverageAmount,
+      policyStartDate: policy.policyStartDate instanceof Date ? policy.policyStartDate.toISOString() : policy.policyStartDate,
+      policyEndDate: policy.policyEndDate instanceof Date ? policy.policyEndDate.toISOString() : policy.policyEndDate,
+      premiumDueDate: policy.premiumDueDate instanceof Date ? policy.premiumDueDate.toISOString() : policy.premiumDueDate,
+      status: policy.status,
+      paymentFrequency: policy.paymentFrequency,
+      nomineeName: policy.nomineeName,
+      nomineeRelationship: policy.nomineeRelationship,
+      notes: policy.notes,
+      documents: policy.documents,
+      lapsedReason: reason || '',
+      lapsedAt: now,
+      createdAt: policy.createdAt instanceof Date ? policy.createdAt.toISOString() : policy.createdAt,
+      updatedAt: now,
+    };
 
-    if (error) {
-      console.error('Supabase error marking policy as lapsed:', error);
-      throw error;
-    }
-
-    return data.id;
+    const docRef = await addDoc(collection(db, COLLECTIONS.LAPSED_POLICIES), lapsedData);
+    return docRef.id;
   } catch (error) {
     console.error('Error marking policy as lapsed:', error);
     throw error;
@@ -47,54 +90,25 @@ export const markPolicyAsLapsed = async (policy: Policy, reason?: string): Promi
 
 export const getLapsedPolicies = async (userId?: string): Promise<LapsedPolicy[]> => {
   try {
-    let query = supabase
-      .from('lapsed_policies')
-      .select('*')
-      .order('lapsed_at', { ascending: false });
-
+    let q;
     if (userId) {
-      query = query.eq('user_id', userId);
+      q = query(
+        collection(db, COLLECTIONS.LAPSED_POLICIES),
+        where('userId', '==', userId),
+        orderBy('lapsedAt', 'desc')
+      );
+    } else {
+      q = query(
+        collection(db, COLLECTIONS.LAPSED_POLICIES),
+        orderBy('lapsedAt', 'desc')
+      );
     }
 
-    const { data, error } = await query;
+    const querySnapshot = await getDocs(q);
 
-    if (error) {
-      console.error('Supabase error:', error);
-      throw error;
-    }
-
-    // Convert snake_case to camelCase
-    const lapsedPolicies: LapsedPolicy[] = (data || []).map(row => ({
-      id: row.id,
-      userId: row.user_id,
-      policyholderName: row.policyholder_name,
-      contactNo: row.contact_no,
-      emailId: row.email_id,
-      address: row.address,
-      policyNumber: row.policy_number,
-      insuranceCompany: row.insurance_company,
-      policyType: row.policy_type,
-      premiumAmount: row.premium_amount,
-      coverageAmount: row.coverage_amount,
-      policyStartDate: row.policy_start_date ? new Date(row.policy_start_date) : undefined,
-      policyEndDate: row.policy_end_date ? new Date(row.policy_end_date) : undefined,
-      premiumDueDate: row.premium_due_date ? new Date(row.premium_due_date) : undefined,
-      // Legacy field mappings for backward compatibility
-      startDate: row.start_date || row.policy_start_date,
-      expiryDate: row.expiry_date || row.policy_end_date,
-      status: row.status,
-      paymentFrequency: row.payment_frequency,
-      nomineeName: row.nominee_name,
-      nomineeRelationship: row.nominee_relationship,
-      notes: row.notes,
-      documents: row.documents || [],
-      lapsedAt: new Date(row.lapsed_at),
-      lapsedReason: row.lapsed_reason,
-      createdAt: new Date(row.created_at),
-      updatedAt: new Date(row.updated_at),
-    }));
-
-    return lapsedPolicies;
+    return querySnapshot.docs.map(docSnap => 
+      mapDocToLapsedPolicy(docSnap.id, docSnap.data())
+    );
   } catch (error) {
     console.error('Error getting lapsed policies:', error);
     throw error;
@@ -103,50 +117,11 @@ export const getLapsedPolicies = async (userId?: string): Promise<LapsedPolicy[]
 
 export const getLapsedPolicyById = async (id: string): Promise<LapsedPolicy | null> => {
   try {
-    const { data, error } = await supabase
-      .from('lapsed_policies')
-      .select('*')
-      .eq('id', id)
-      .single();
+    const docSnap = await getDoc(doc(db, COLLECTIONS.LAPSED_POLICIES, id));
 
-    if (error) {
-      if (error.code === 'PGRST116') {
-        return null;
-      }
-      throw error;
-    }
+    if (!docSnap.exists()) return null;
 
-    if (!data) return null;
-
-    return {
-      id: data.id,
-      userId: data.user_id,
-      policyholderName: data.policyholder_name,
-      contactNo: data.contact_no,
-      emailId: data.email_id,
-      address: data.address,
-      policyNumber: data.policy_number,
-      insuranceCompany: data.insurance_company,
-      policyType: data.policy_type,
-      premiumAmount: data.premium_amount,
-      coverageAmount: data.coverage_amount,
-      policyStartDate: data.policy_start_date ? new Date(data.policy_start_date) : undefined,
-      policyEndDate: data.policy_end_date ? new Date(data.policy_end_date) : undefined,
-      premiumDueDate: data.premium_due_date ? new Date(data.premium_due_date) : undefined,
-      // Legacy field mappings for backward compatibility
-      startDate: data.start_date || data.policy_start_date,
-      expiryDate: data.expiry_date || data.policy_end_date,
-      status: data.status,
-      paymentFrequency: data.payment_frequency,
-      nomineeName: data.nominee_name,
-      nomineeRelationship: data.nominee_relationship,
-      notes: data.notes,
-      documents: data.documents || [],
-      lapsedAt: new Date(data.lapsed_at),
-      lapsedReason: data.lapsed_reason,
-      createdAt: new Date(data.created_at),
-      updatedAt: new Date(data.updated_at),
-    };
+    return mapDocToLapsedPolicy(docSnap.id, docSnap.data());
   } catch (error) {
     console.error('Error getting lapsed policy:', error);
     throw error;
@@ -155,15 +130,7 @@ export const getLapsedPolicyById = async (id: string): Promise<LapsedPolicy | nu
 
 export const removeLapsedPolicy = async (id: string): Promise<void> => {
   try {
-    const { error } = await supabase
-      .from('lapsed_policies')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-      console.error('Supabase error removing lapsed policy:', error);
-      throw error;
-    }
+    await deleteDoc(doc(db, COLLECTIONS.LAPSED_POLICIES, id));
   } catch (error) {
     console.error('Error removing lapsed policy:', error);
     throw error;
