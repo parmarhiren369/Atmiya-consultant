@@ -14,7 +14,11 @@
  * - local-backup/data/assets/     - Uploaded files (PDFs, images, etc.) organized by month
  */
 
-const LOCAL_BACKUP_URL = 'http://localhost:3099';
+// Use environment variable or default to localhost for development
+const LOCAL_BACKUP_URL = import.meta.env.VITE_LOCAL_BACKUP_URL || 'http://localhost:3099';
+
+// Check if we're in production (Vercel) - skip local backup in production
+const isProduction = import.meta.env.PROD && !import.meta.env.VITE_LOCAL_BACKUP_URL;
 
 interface BackupPayload {
   action: 'CREATE' | 'UPDATE' | 'DELETE';
@@ -48,6 +52,11 @@ export const localBackupService = {
    * Returns true if backup succeeded, false otherwise
    */
   async backup(collection: string, payload: BackupPayload): Promise<boolean> {
+    // Skip local backup in production (no localhost access)
+    if (isProduction) {
+      return true; // Return success to not break the flow
+    }
+    
     try {
       const response = await fetch(`${LOCAL_BACKUP_URL}/backup/${collection}`, {
         method: 'POST',
@@ -73,6 +82,9 @@ export const localBackupService = {
    * Sync all records for a collection (full data sync)
    */
   async syncAll(collection: string, data: unknown[]): Promise<boolean> {
+    // Skip in production
+    if (isProduction) return true;
+    
     try {
       const response = await fetch(`${LOCAL_BACKUP_URL}/backup/sync/${collection}`, {
         method: 'POST',
@@ -98,6 +110,11 @@ export const localBackupService = {
    * Used as fallback when Firebase is unavailable
    */
   async getAll<T>(collection: string, userId?: string): Promise<T[] | null> {
+    // Skip local backup in production (no localhost access)
+    if (isProduction) {
+      return null;
+    }
+    
     try {
       let url = `${LOCAL_BACKUP_URL}/backup/read/${collection}`;
       if (userId) {
@@ -121,6 +138,9 @@ export const localBackupService = {
    * Get single record by ID from local backup
    */
   async getById<T>(collection: string, id: string): Promise<T | null> {
+    // Skip in production
+    if (isProduction) return null;
+    
     try {
       const response = await fetch(`${LOCAL_BACKUP_URL}/backup/read/${collection}/${id}`);
       if (response.ok) {
@@ -139,6 +159,9 @@ export const localBackupService = {
    * Query records with filters and sorting
    */
   async query<T>(collection: string, options: QueryOptions): Promise<T[] | null> {
+    // Skip in production
+    if (isProduction) return null;
+    
     try {
       const response = await fetch(`${LOCAL_BACKUP_URL}/backup/query/${collection}`, {
         method: 'POST',
@@ -164,6 +187,9 @@ export const localBackupService = {
    * Backup a single file (PDF, image, document, etc.)
    */
   async backupFile(collection: string, recordId: string, file: File): Promise<boolean> {
+    // Skip in production
+    if (isProduction) return true;
+    
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -188,6 +214,9 @@ export const localBackupService = {
    * Backup multiple files at once
    */
   async backupFiles(collection: string, recordId: string, files: File[]): Promise<boolean> {
+    // Skip in production
+    if (isProduction) return true;
+    
     try {
       const formData = new FormData();
       files.forEach(file => formData.append('files', file));
@@ -213,6 +242,9 @@ export const localBackupService = {
    * Downloads the file and re-uploads to local backup
    */
   async backupFileFromUrl(collection: string, recordId: string, url: string, filename: string): Promise<boolean> {
+    // Skip in production
+    if (isProduction) return true;
+    
     try {
       // Fetch the file from URL
       const response = await fetch(url);
@@ -237,6 +269,9 @@ export const localBackupService = {
    * Check if backup server is running
    */
   async isServerRunning(): Promise<boolean> {
+    // Skip in production
+    if (isProduction) return false;
+    
     try {
       const response = await fetch(`${LOCAL_BACKUP_URL}/health`, {
         method: 'GET',
@@ -251,6 +286,9 @@ export const localBackupService = {
    * Get backup statistics
    */
   async getStats(): Promise<BackupStats | null> {
+    // Skip in production
+    if (isProduction) return null;
+    
     try {
       const response = await fetch(`${LOCAL_BACKUP_URL}/backup/stats`);
       if (response.ok) {
