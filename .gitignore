@@ -53,3 +53,7 @@ Thumbs.db
 *.tmp
 *.temp
 .cache
+
+# Local backup data (keep locally, don't commit)
+local-backup/data/
+local-backup/node_modules/

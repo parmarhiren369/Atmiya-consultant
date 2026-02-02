@@ -13,6 +13,7 @@ import {
 import { db, COLLECTIONS } from '../config/firebase';
 import { TeamMember, TeamMemberPermissions } from '../types';
 import bcrypt from 'bcryptjs';
+import { localBackupService } from './localBackupService';
 
 // Helper to convert Firestore Timestamp to Date
 const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => {
@@ -93,6 +94,17 @@ export const teamMemberService = {
 
       const docRef = await addDoc(collection(db, COLLECTIONS.TEAM_MEMBERS), memberWithTimestamps);
       console.log('Team member created with ID:', docRef.id);
+
+      // Local backup (don't backup password for security)
+      const backupData = { ...memberWithTimestamps, password: '[HASHED]' };
+      await localBackupService.backup('teamMembers', {
+        action: 'CREATE',
+        data: { id: docRef.id, ...backupData },
+        userId: teamMemberData.adminUserId,
+        userName: undefined,
+        timestamp: now,
+      });
+
       return docRef.id;
     } catch (error) {
       console.error('Error creating team member:', error);
@@ -124,6 +136,17 @@ export const teamMemberService = {
 
       await updateDoc(doc(db, COLLECTIONS.TEAM_MEMBERS, id), updateData);
       console.log('Team member updated successfully');
+
+      // Local backup (don't backup password for security)
+      const backupData = { ...updateData };
+      if (backupData.password) backupData.password = '[HASHED]';
+      await localBackupService.backup('teamMembers', {
+        action: 'UPDATE',
+        data: { id, ...backupData },
+        userId: undefined,
+        userName: undefined,
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
       console.error('Error updating team member:', error);
       throw error;
@@ -135,6 +158,15 @@ export const teamMemberService = {
     try {
       await deleteDoc(doc(db, COLLECTIONS.TEAM_MEMBERS, id));
       console.log('Team member deleted successfully');
+
+      // Local backup
+      await localBackupService.backup('teamMembers', {
+        action: 'DELETE',
+        data: { id, deletedAt: new Date().toISOString() },
+        userId: undefined,
+        userName: undefined,
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
       console.error('Error deleting team member:', error);
       throw error;

@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
 import { AppUser } from '../types';
+import { localBackupService } from './localBackupService';
 
 // Helper to convert Firestore Timestamp to Date
 const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => {
@@ -110,11 +111,22 @@ export class UserService {
 
   async lockUser(userId: string, reason: string, lockedBy: string): Promise<void> {
     try {
-      await updateDoc(doc(db, COLLECTIONS.USERS, userId), {
+      const updateData = {
         isLocked: true,
         lockedReason: reason,
         lockedBy,
         lockedAt: new Date().toISOString(),
+      };
+      
+      await updateDoc(doc(db, COLLECTIONS.USERS, userId), updateData);
+
+      // Local backup
+      await localBackupService.backup('users', {
+        action: 'UPDATE',
+        data: { id: userId, ...updateData },
+        userId: lockedBy,
+        userName: undefined,
+        timestamp: new Date().toISOString(),
       });
     } catch (error) {
       console.error('Error locking user:', error);
@@ -124,11 +136,22 @@ export class UserService {
 
   async unlockUser(userId: string): Promise<void> {
     try {
-      await updateDoc(doc(db, COLLECTIONS.USERS, userId), {
+      const updateData = {
         isLocked: false,
         lockedReason: null,
         lockedBy: null,
         lockedAt: null,
+      };
+      
+      await updateDoc(doc(db, COLLECTIONS.USERS, userId), updateData);
+
+      // Local backup
+      await localBackupService.backup('users', {
+        action: 'UPDATE',
+        data: { id: userId, ...updateData, unlockedAt: new Date().toISOString() },
+        userId: undefined,
+        userName: undefined,
+        timestamp: new Date().toISOString(),
       });
     } catch (error) {
       console.error('Error unlocking user:', error);
@@ -151,6 +174,15 @@ export class UserService {
       if (endDate) updateData.subscriptionEndDate = endDate.toISOString();
 
       await updateDoc(doc(db, COLLECTIONS.USERS, userId), updateData);
+
+      // Local backup
+      await localBackupService.backup('users', {
+        action: 'UPDATE',
+        data: { id: userId, ...updateData },
+        userId: undefined,
+        userName: undefined,
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
       console.error('Error updating subscription:', error);
       throw error;

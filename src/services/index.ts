@@ -11,3 +11,4 @@ export { leadService } from './leadService';
 export { storageService } from './storageService';
 export { groupHeadService } from './groupHeadService';
 export { policyDeletionRequestService } from './policyDeletionRequestService';
+export { localBackupService } from './localBackupService';

@@ -7,6 +7,7 @@ import {
   getMetadata 
 } from 'firebase/storage';
 import { storage } from '../config/firebase';
+import { localBackupService } from './localBackupService';
 
 interface FileMetadata {
   name: string;
@@ -67,6 +68,9 @@ export const storageService = {
       const downloadURL = await getDownloadURL(snapshot.ref);
 
       console.log(`File uploaded successfully: ${storagePath}`);
+
+      // Local backup - save the file locally too
+      await localBackupService.backupFile(bucket, `${userId}_${Date.now()}`, file);
 
       return {
         name: file.name,

@@ -12,6 +12,7 @@ import {
   Timestamp
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
+import { localBackupService } from './localBackupService';
 
 export interface GroupHead {
   id: string;
@@ -52,7 +53,7 @@ const mapDocToGroupHead = (id: string, data: Record<string, unknown>): GroupHead
 });
 
 export const groupHeadService = {
-  // Get all group heads for a user
+  // Get all group heads for a user - with fallback to local backup
   getGroupHeads: async (userId: string): Promise<GroupHead[]> => {
     try {
       const q = query(
@@ -62,12 +63,31 @@ export const groupHeadService = {
       );
       const querySnapshot = await getDocs(q);
 
-      return querySnapshot.docs.map(docSnap => 
+      const groupHeads = querySnapshot.docs.map(docSnap => 
         mapDocToGroupHead(docSnap.id, docSnap.data())
       );
+
+      // Sync to local backup
+      if (groupHeads.length > 0) {
+        localBackupService.syncAll('groupHeads', groupHeads).catch(() => {});
+      }
+
+      return groupHeads;
     } catch (error) {
-      console.error('Error getting group heads:', error);
-      throw error;
+      console.error('Error getting group heads from Firebase:', error);
+      
+      // Fallback to local backup
+      const localData = await localBackupService.getAll<GroupHead>('groupHeads', userId);
+      if (localData && localData.length > 0) {
+        console.log(`📥 Loaded ${localData.length} group heads from local backup`);
+        return localData.map(g => ({
+          ...g,
+          createdAt: g.createdAt ? new Date(g.createdAt) : new Date(),
+          updatedAt: g.updatedAt ? new Date(g.updatedAt) : new Date(),
+        }));
+      }
+      
+      throw new Error('Failed to fetch group heads from both Firebase and local backup');
     }
   },
 
@@ -85,59 +105,107 @@ export const groupHeadService = {
     }
   },
 
-  // Add a new group head
+  // Add a new group head - saves to local backup FIRST
   addGroupHead: async (groupHeadData: Omit<GroupHead, 'id' | 'createdAt' | 'updatedAt' | 'totalPolicies' | 'totalPremiumAmount'>): Promise<string> => {
+    const now = new Date().toISOString();
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const dbData = {
+      userId: groupHeadData.userId,
+      groupHeadName: groupHeadData.groupHeadName,
+      contactNo: groupHeadData.contactNo || null,
+      emailId: groupHeadData.emailId || null,
+      address: groupHeadData.address || null,
+      relationshipType: groupHeadData.relationshipType || 'Primary',
+      notes: groupHeadData.notes || null,
+      totalPolicies: 0,
+      totalPremiumAmount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Local backup FIRST
+    const localBackupPromise = localBackupService.backup('groupHeads', {
+      action: 'CREATE',
+      data: { id: tempId, ...dbData, _tempId: true },
+      userId: groupHeadData.userId,
+      userName: undefined,
+      timestamp: now,
+    });
+
     try {
-      const now = new Date().toISOString();
-      const docRef = await addDoc(collection(db, COLLECTIONS.GROUP_HEADS), {
+      const docRef = await addDoc(collection(db, COLLECTIONS.GROUP_HEADS), dbData);
+
+      // Update local backup with real Firebase ID
+      await localBackupService.backup('groupHeads', {
+        action: 'UPDATE',
+        data: { id: docRef.id, ...dbData, _tempId: tempId },
         userId: groupHeadData.userId,
-        groupHeadName: groupHeadData.groupHeadName,
-        contactNo: groupHeadData.contactNo || null,
-        emailId: groupHeadData.emailId || null,
-        address: groupHeadData.address || null,
-        relationshipType: groupHeadData.relationshipType || 'Primary',
-        notes: groupHeadData.notes || null,
-        totalPolicies: 0,
-        totalPremiumAmount: 0,
-        createdAt: now,
-        updatedAt: now,
+        userName: undefined,
+        timestamp: now,
       });
 
       return docRef.id;
-    } catch (error) {
-      console.error('Error adding group head:', error);
-      throw error;
+    } catch (firebaseError) {
+      await localBackupPromise;
+      console.error('Firebase save failed, group head saved to local backup with temp ID:', tempId);
+      throw new Error('Failed to add group head to Firebase (saved locally)');
     }
   },
 
-  // Update a group head
+  // Update a group head - saves to local backup FIRST
   updateGroupHead: async (id: string, updates: Partial<GroupHead>): Promise<void> => {
-    try {
-      const updateData: Record<string, unknown> = {
-        updatedAt: new Date().toISOString(),
-      };
-      
-      if (updates.groupHeadName !== undefined) updateData.groupHeadName = updates.groupHeadName;
-      if (updates.contactNo !== undefined) updateData.contactNo = updates.contactNo;
-      if (updates.emailId !== undefined) updateData.emailId = updates.emailId;
-      if (updates.address !== undefined) updateData.address = updates.address;
-      if (updates.relationshipType !== undefined) updateData.relationshipType = updates.relationshipType;
-      if (updates.notes !== undefined) updateData.notes = updates.notes;
+    const now = new Date().toISOString();
+    const updateData: Record<string, unknown> = {
+      updatedAt: now,
+    };
+    
+    if (updates.groupHeadName !== undefined) updateData.groupHeadName = updates.groupHeadName;
+    if (updates.contactNo !== undefined) updateData.contactNo = updates.contactNo;
+    if (updates.emailId !== undefined) updateData.emailId = updates.emailId;
+    if (updates.address !== undefined) updateData.address = updates.address;
+    if (updates.relationshipType !== undefined) updateData.relationshipType = updates.relationshipType;
+    if (updates.notes !== undefined) updateData.notes = updates.notes;
 
+    // Local backup FIRST
+    const localBackupPromise = localBackupService.backup('groupHeads', {
+      action: 'UPDATE',
+      data: { id, ...updateData },
+      userId: undefined,
+      userName: undefined,
+      timestamp: now,
+    });
+
+    try {
       await updateDoc(doc(db, COLLECTIONS.GROUP_HEADS, id), updateData);
-    } catch (error) {
-      console.error('Error updating group head:', error);
-      throw error;
+      await localBackupPromise;
+    } catch (firebaseError) {
+      await localBackupPromise;
+      console.error('Firebase update failed, group head update saved to local backup');
+      throw new Error('Failed to update group head in Firebase (saved locally)');
     }
   },
 
-  // Delete a group head
+  // Delete a group head - saves to local backup FIRST
   deleteGroupHead: async (id: string): Promise<void> => {
+    const now = new Date().toISOString();
+    
+    // Local backup FIRST
+    const localBackupPromise = localBackupService.backup('groupHeads', {
+      action: 'DELETE',
+      data: { id, deletedAt: now },
+      userId: undefined,
+      userName: undefined,
+      timestamp: now,
+    });
+
     try {
       await deleteDoc(doc(db, COLLECTIONS.GROUP_HEADS, id));
-    } catch (error) {
-      console.error('Error deleting group head:', error);
-      throw error;
+      await localBackupPromise;
+    } catch (firebaseError) {
+      await localBackupPromise;
+      console.error('Firebase delete failed, group head deletion saved to local backup');
+      throw new Error('Failed to delete group head from Firebase (saved locally)');
     }
   },
 

@@ -85,10 +85,10 @@ export function Sidebar() {
           <div className="flex items-center p-4 border-b border-gray-200 dark:border-gray-700">
             <Link to="/" className="flex items-center justify-center w-full" onClick={() => setIsMobileOpen(false)}>
               {!isCollapsed && (
-                <img src="/onclickslogin.png" alt="OnClicks Logo" className="h-16 w-auto object-contain" />
+                <img src="/LOGO.PNG" alt="Atmiya Consultant Logo" className="h-16 w-auto object-contain" />
               )}
               {isCollapsed && (
-                <img src="/onclickslogin.png" alt="OnClicks Logo" className="h-10 w-auto object-contain" />
+                <img src="/LOGO.PNG" alt="Atmiya Consultant Logo" className="h-10 w-auto object-contain" />
               )}
             </Link>
           </div>

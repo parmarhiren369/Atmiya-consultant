@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
 import { Lead, LeadFormData, FollowUpHistory } from '../types';
+import { localBackupService } from './localBackupService';
 
 // Helper to convert Firestore Timestamp to Date
 const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => {
@@ -23,6 +24,7 @@ const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => 
 
 export const leadService = {
   // Get all leads (optionally filtered by userId)
+  // With fallback to local backup if Firebase fails
   getLeads: async (userId?: string): Promise<Lead[]> => {
     try {
       console.log('Fetching leads for userId:', userId);
@@ -69,10 +71,31 @@ export const leadService = {
         };
       });
 
+      // Sync to local backup for future fallback
+      if (leads.length > 0) {
+        localBackupService.syncAll('leads', leads).catch(() => {});
+      }
+
       return leads;
     } catch (error) {
-      console.error('Error in getLeads:', error);
-      throw error;
+      console.error('Error in getLeads from Firebase:', error);
+      
+      // Fallback to local backup
+      console.log('Attempting to fetch leads from local backup...');
+      const localLeads = await localBackupService.getAll<Lead>('leads', userId);
+      
+      if (localLeads && localLeads.length > 0) {
+        console.log(`📥 Loaded ${localLeads.length} leads from local backup`);
+        return localLeads.map(l => ({
+          ...l,
+          followUpDate: l.followUpDate ? new Date(l.followUpDate) : new Date(),
+          nextFollowUpDate: l.nextFollowUpDate ? new Date(l.nextFollowUpDate) : undefined,
+          createdAt: l.createdAt ? new Date(l.createdAt) : new Date(),
+          updatedAt: l.updatedAt ? new Date(l.updatedAt) : new Date(),
+        }));
+      }
+      
+      throw new Error('Failed to fetch leads from both Firebase and local backup');
     }
   },
 
@@ -112,30 +135,51 @@ export const leadService = {
   },
 
   // Create a new lead
+  // Saves to local backup FIRST (in parallel), then to Firebase
   createLead: async (leadData: LeadFormData, userId: string, userDisplayName: string): Promise<Lead> => {
-    try {
-      const now = new Date().toISOString();
-      const dbLead = {
-        userId: userId,
-        customerName: leadData.customerName,
-        customerMobile: leadData.customerMobile,
-        customerEmail: leadData.customerEmail,
-        productType: leadData.productType,
-        followUpDate: leadData.followUpDate,
-        status: leadData.status,
-        leadSource: leadData.leadSource,
-        remark: leadData.remark || null,
-        nextFollowUpDate: leadData.nextFollowUpDate || null,
-        priority: leadData.priority || 'medium',
-        estimatedValue: leadData.estimatedValue || null,
-        isConverted: false,
-        createdAt: now,
-        updatedAt: now,
-        createdBy: userId,
-        createdByName: userDisplayName,
-      };
+    const now = new Date().toISOString();
+    const tempId = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    const dbLead = {
+      userId: userId,
+      customerName: leadData.customerName,
+      customerMobile: leadData.customerMobile,
+      customerEmail: leadData.customerEmail,
+      productType: leadData.productType,
+      followUpDate: leadData.followUpDate,
+      status: leadData.status,
+      leadSource: leadData.leadSource,
+      remark: leadData.remark || null,
+      nextFollowUpDate: leadData.nextFollowUpDate || null,
+      priority: leadData.priority || 'medium',
+      estimatedValue: leadData.estimatedValue || null,
+      isConverted: false,
+      createdAt: now,
+      updatedAt: now,
+      createdBy: userId,
+      createdByName: userDisplayName,
+    };
 
+    // Start local backup immediately (with temp ID) - don't wait for it
+    const localBackupPromise = localBackupService.backup('leads', {
+      action: 'CREATE',
+      data: { id: tempId, ...dbLead, _tempId: true },
+      userId: userId,
+      userName: userDisplayName,
+      timestamp: now,
+    });
+
+    try {
       const docRef = await addDoc(collection(db, COLLECTIONS.LEADS), dbLead);
+
+      // Update local backup with real Firebase ID
+      await localBackupService.backup('leads', {
+        action: 'UPDATE',
+        data: { id: docRef.id, ...dbLead, _tempId: tempId },
+        userId: userId,
+        userName: userDisplayName,
+        timestamp: now,
+      });
 
       return {
         id: docRef.id,
@@ -155,45 +199,74 @@ export const leadService = {
         createdAt: new Date(now),
         updatedAt: new Date(now),
       };
-    } catch (error) {
-      console.error('Error in createLead:', error);
-      throw error;
+    } catch (firebaseError) {
+      // Firebase failed - make sure local backup completed
+      await localBackupPromise;
+      console.error('Firebase save failed, lead saved to local backup with temp ID:', tempId);
+      throw new Error('Failed to create lead in Firebase (saved locally)');
     }
   },
 
   // Update a lead
+  // Saves to local backup FIRST, then to Firebase
   updateLead: async (id: string, updates: Partial<LeadFormData>): Promise<void> => {
+    const now = new Date().toISOString();
+    const dbUpdates: Record<string, unknown> = {
+      updatedAt: now
+    };
+
+    if (updates.customerName !== undefined) dbUpdates.customerName = updates.customerName;
+    if (updates.customerMobile !== undefined) dbUpdates.customerMobile = updates.customerMobile;
+    if (updates.customerEmail !== undefined) dbUpdates.customerEmail = updates.customerEmail;
+    if (updates.productType !== undefined) dbUpdates.productType = updates.productType;
+    if (updates.followUpDate !== undefined) dbUpdates.followUpDate = updates.followUpDate;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.leadSource !== undefined) dbUpdates.leadSource = updates.leadSource;
+    if (updates.remark !== undefined) dbUpdates.remark = updates.remark;
+    if (updates.nextFollowUpDate !== undefined) dbUpdates.nextFollowUpDate = updates.nextFollowUpDate;
+    if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
+    if (updates.estimatedValue !== undefined) dbUpdates.estimatedValue = updates.estimatedValue;
+
+    // Local backup FIRST
+    const localBackupPromise = localBackupService.backup('leads', {
+      action: 'UPDATE',
+      data: { id, ...dbUpdates },
+      userId: undefined,
+      userName: undefined,
+      timestamp: now,
+    });
+
     try {
-      const dbUpdates: Record<string, unknown> = {
-        updatedAt: new Date().toISOString()
-      };
-
-      if (updates.customerName !== undefined) dbUpdates.customerName = updates.customerName;
-      if (updates.customerMobile !== undefined) dbUpdates.customerMobile = updates.customerMobile;
-      if (updates.customerEmail !== undefined) dbUpdates.customerEmail = updates.customerEmail;
-      if (updates.productType !== undefined) dbUpdates.productType = updates.productType;
-      if (updates.followUpDate !== undefined) dbUpdates.followUpDate = updates.followUpDate;
-      if (updates.status !== undefined) dbUpdates.status = updates.status;
-      if (updates.leadSource !== undefined) dbUpdates.leadSource = updates.leadSource;
-      if (updates.remark !== undefined) dbUpdates.remark = updates.remark;
-      if (updates.nextFollowUpDate !== undefined) dbUpdates.nextFollowUpDate = updates.nextFollowUpDate;
-      if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
-      if (updates.estimatedValue !== undefined) dbUpdates.estimatedValue = updates.estimatedValue;
-
       await updateDoc(doc(db, COLLECTIONS.LEADS, id), dbUpdates);
-    } catch (error) {
-      console.error('Error in updateLead:', error);
-      throw error;
+      await localBackupPromise;
+    } catch (firebaseError) {
+      await localBackupPromise;
+      console.error('Firebase update failed, lead update saved to local backup');
+      throw new Error('Failed to update lead in Firebase (saved locally)');
     }
   },
 
   // Delete a lead
+  // Saves to local backup FIRST, then deletes from Firebase
   deleteLead: async (id: string): Promise<void> => {
+    const now = new Date().toISOString();
+    
+    // Local backup FIRST
+    const localBackupPromise = localBackupService.backup('leads', {
+      action: 'DELETE',
+      data: { id, deletedAt: now },
+      userId: undefined,
+      userName: undefined,
+      timestamp: now,
+    });
+
     try {
       await deleteDoc(doc(db, COLLECTIONS.LEADS, id));
-    } catch (error) {
-      console.error('Error in deleteLead:', error);
-      throw error;
+      await localBackupPromise;
+    } catch (firebaseError) {
+      await localBackupPromise;
+      console.error('Firebase delete failed, lead deletion saved to local backup');
+      throw new Error('Failed to delete lead from Firebase (saved locally)');
     }
   },
 
@@ -270,6 +343,15 @@ export const leadService = {
 
       const docRef = await addDoc(collection(db, COLLECTIONS.FOLLOW_UP_HISTORY), dbHistory);
 
+      // Local backup
+      await localBackupService.backup('followUpHistory', {
+        action: 'CREATE',
+        data: { id: docRef.id, ...dbHistory },
+        userId: historyData.createdBy,
+        userName: historyData.createdByName,
+        timestamp: now,
+      });
+
       return {
         id: docRef.id,
         leadId,
@@ -323,11 +405,22 @@ export const leadService = {
   // Mark lead as converted
   markAsConverted: async (leadId: string, policyId: string): Promise<void> => {
     try {
-      await updateDoc(doc(db, COLLECTIONS.LEADS, leadId), {
+      const updateData = {
         isConverted: true,
         convertedToPolicyId: policyId,
         status: 'won',
         updatedAt: new Date().toISOString(),
+      };
+      
+      await updateDoc(doc(db, COLLECTIONS.LEADS, leadId), updateData);
+
+      // Local backup
+      await localBackupService.backup('leads', {
+        action: 'UPDATE',
+        data: { id: leadId, ...updateData },
+        userId: undefined,
+        userName: undefined,
+        timestamp: new Date().toISOString(),
       });
     } catch (error) {
       console.error('Error in markAsConverted:', error);

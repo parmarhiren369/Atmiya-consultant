@@ -67,7 +67,7 @@ export function Signup() {
         {/* Logo */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center mb-4">
-            <img src="/onclickslogin.png" alt="OnClicks Logo" className="w-64 h-auto object-contain" />
+            <img src="/LOGO.PNG" alt="Atmiya Consultant Logo" className="w-64 h-auto object-contain" />
           </div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
             Create Account

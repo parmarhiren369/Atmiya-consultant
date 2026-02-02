@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Shield, Menu, X, Plus, Bell, User, LogOut, Moon, Sun } from 'lucide-react';
+import { Menu, X, Plus, Bell, User, LogOut, Moon, Sun } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 
@@ -50,16 +50,8 @@ export function Navbar() {
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
           <div className="flex items-center">
-            <Link to="/" className="flex items-center space-x-2">
-              <div className="bg-blue-700 dark:bg-gradient-to-r dark:from-blue-600 dark:to-indigo-600 p-2 rounded-sharp">
-                <Shield className="h-6 w-6 text-white" />
-              </div>
-              <span className="text-lg lg:text-xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent hidden sm:block">
-                OnClicks Policy Manager
-              </span>
-              <span className="text-lg font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent sm:hidden">
-                VII
-              </span>
+            <Link to="/" className="flex items-center">
+              <img src="/LOGO.PNG" alt="Atmiya Consultant Logo" className="h-12 w-auto object-contain" />
             </Link>
           </div>
 
