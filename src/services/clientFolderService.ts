@@ -5,7 +5,7 @@ import {
   where
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
-import { storageService } from './storageService';
+import { clientDocumentService } from './clientDocumentService';
 
 interface ClientFolder {
   id: string;
@@ -58,19 +58,17 @@ export async function getClientFolders(userId: string): Promise<ClientFolder[]> 
       }
     });
 
-    // Get actual document counts from Firebase Storage for each client
+    // Get actual document counts from Firestore (avoids CORS issues with Storage listAll)
     const clientFolders = Array.from(clientMap.values());
     
-    // Fetch document counts in parallel
+    // Fetch document counts in parallel from Firestore
     const documentCountPromises = clientFolders.map(async (folder) => {
       try {
-        const files = await storageService.listUserFiles(
+        folder.documentCount = await clientDocumentService.getDocumentCount(
           userId,
-          'client-documents',
           folder.policyholderName,
           folder.policyNumber
         );
-        folder.documentCount = files.length;
       } catch (error) {
         console.error(`Error counting documents for ${folder.policyholderName}:`, error);
         folder.documentCount = 0;

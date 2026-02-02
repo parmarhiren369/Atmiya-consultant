@@ -3,6 +3,7 @@ import { Search, Folder, FileText, FolderOpen, Upload, X, Download, Eye, Trash2 
 import { useAuth } from '../context/AuthContext';
 import { getClientFolders } from '../services/clientFolderService';
 import { storageService } from '../services/storageService';
+import { clientDocumentService } from '../services/clientDocumentService';
 import toast from 'react-hot-toast';
 
 interface ClientFolder {
@@ -29,9 +30,11 @@ export function ClientFolders() {
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [documents, setDocuments] = useState<Array<{
+    id: string;
     name: string;
     path: string;
     url: string;
+    size?: number;
   }>>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
 
@@ -113,7 +116,29 @@ export function ClientFolders() {
         selectedFolder.policyNumber // Policy number for uniqueness
       );
 
-      const successCount = results.filter((r): r is { name: string; url: string; path: string } => r !== null).length;
+      // Save document metadata to Firestore for each successful upload
+      let successCount = 0;
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
+        if (result) {
+          try {
+            await clientDocumentService.addDocument(
+              effectiveUserId,
+              selectedFolder.policyholderName,
+              selectedFolder.policyNumber,
+              result.name,
+              result.url,
+              result.path,
+              uploadFiles[i].size,
+              uploadFiles[i].type
+            );
+            successCount++;
+          } catch (err) {
+            console.error('Error saving document metadata:', err);
+          }
+        }
+      }
+
       if (successCount > 0) {
         toast.success(`Successfully uploaded ${successCount} file(s)`);
         setUploadModalOpen(false);
@@ -140,13 +165,20 @@ export function ClientFolders() {
     setLoadingDocuments(true);
 
     try {
-      const files = await storageService.listUserFiles(
-        effectiveUserId, 
-        'client-documents',
-        folder.policyholderName, // Customer name
-        folder.policyNumber // Policy number for uniqueness
+      // Use Firestore to get document metadata (avoids CORS issues with Storage listAll)
+      const docs = await clientDocumentService.getClientDocuments(
+        effectiveUserId,
+        folder.policyholderName,
+        folder.policyNumber
       );
-      setDocuments(files);
+      
+      setDocuments(docs.map(doc => ({
+        id: doc.id,
+        name: doc.fileName,
+        path: doc.filePath,
+        url: doc.fileUrl,
+        size: doc.fileSize,
+      })));
     } catch (error) {
       console.error('Error loading documents:', error);
       toast.error('Failed to load documents');
@@ -165,22 +197,20 @@ export function ClientFolders() {
     document.body.removeChild(link);
   };
 
-  const handleDeleteDocument = async (filePath: string) => {
+  const handleDeleteDocument = async (docId: string, filePath: string) => {
     if (!confirm('Are you sure you want to delete this document?')) return;
 
     try {
+      // Delete from Storage
       await storageService.deleteClientDocument(filePath);
+      // Delete from Firestore
+      await clientDocumentService.deleteDocument(docId);
+      
       toast.success('Document deleted successfully');
-      // Reload documents for this specific customer
-      if (selectedFolder && effectiveUserId) {
-        const files = await storageService.listUserFiles(
-          effectiveUserId, 
-          'client-documents',
-          selectedFolder.policyholderName,
-          selectedFolder.policyNumber
-        );
-        setDocuments(files);
-      }
+      // Remove from local state
+      setDocuments(prev => prev.filter(doc => doc.id !== docId));
+      // Reload folders to update document count
+      loadClientFolders();
     } catch (error) {
       console.error('Error deleting document:', error);
       toast.error('Failed to delete document');
@@ -512,7 +542,7 @@ export function ClientFolders() {
                           <Download className="h-5 w-5" />
                         </button>
                         <button
-                          onClick={() => handleDeleteDocument(doc.path)}
+                          onClick={() => handleDeleteDocument(doc.id, doc.path)}
                           className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-sharp transition-colors"
                           title="Delete"
                         >
