@@ -97,7 +97,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
   }
 
   if (shouldRedirect) {
-    return <Navigate to="/pricing" replace />;
+    return <Navigate to="/support" replace />;
   }
 
   // Check if user is locked (only for regular users, not team members)
@@ -150,11 +150,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
           </p>
           <div className="space-y-3">
             <button
-              onClick={() => navigate('/pricing')}
+              onClick={() => navigate('/support')}
               className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 font-semibold"
             >
               <CreditCard className="w-5 h-5" />
-              View Plans & Subscribe
+              Contact Support
             </button>
             <button
               onClick={() => navigate('/login')}
@@ -180,10 +180,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children }) => {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => navigate('/pricing')}
+                onClick={() => navigate('/support')}
                 className="px-4 py-1 bg-white text-orange-600 rounded font-semibold text-sm hover:bg-gray-100 flex-shrink-0"
               >
-                Subscribe Now
+                Contact Support
               </button>
               <button
                 onClick={() => setShowWarning(false)}

@@ -14,7 +14,7 @@ export function UpgradeModal({ isOpen, onClose, feature }: UpgradeModalProps) {
 
   const handleUpgrade = () => {
     onClose();
-    navigate('/pricing');
+    navigate('/support');
   };
 
   return (
@@ -50,14 +50,14 @@ export function UpgradeModal({ isOpen, onClose, feature }: UpgradeModalProps) {
         {/* Content */}
         <div className="px-6 py-6">
           <p className="text-gray-600 dark:text-gray-300 text-center mb-6">
-            <span className="font-semibold text-gray-900 dark:text-white">{feature}</span> is available exclusively for Standard, Premium and Enterprise plan subscribers.
+            <span className="font-semibold text-gray-900 dark:text-white">{feature}</span> requires additional access. Please contact support for assistance.
           </p>
 
           <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4 mb-6">
             <div className="flex items-start space-x-3">
               <Shield className="h-5 w-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
               <div className="text-sm text-blue-900 dark:text-blue-200">
-                <p className="font-medium mb-1">Upgrade to unlock:</p>
+                <p className="font-medium mb-1">Contact support to enable:</p>
                 <ul className="space-y-1 list-disc list-inside">
                   <li>AI-powered document analysis</li>
                   <li>Automated data extraction</li>
@@ -75,7 +75,7 @@ export function UpgradeModal({ isOpen, onClose, feature }: UpgradeModalProps) {
               className="w-full flex items-center justify-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-md hover:shadow-lg font-medium"
             >
               <Crown className="h-5 w-5" />
-              <span>View Premium Plans</span>
+              <span>Contact Support</span>
               <ArrowRight className="h-4 w-4" />
             </button>
             

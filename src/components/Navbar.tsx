@@ -126,14 +126,6 @@ export function Navbar() {
                       <p className="text-xs text-gray-500 dark:text-gray-400">{user?.email}</p>
                       <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{user?.role}</p>
                     </div>
-                    <Link
-                      to="/subscription"
-                      onClick={() => setUserMenuOpen(false)}
-                      className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center space-x-2"
-                    >
-                      <Shield className="h-4 w-4" />
-                      <span>My Subscription</span>
-                    </Link>
                     <button
                       onClick={handleLogout}
                       className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center space-x-2"

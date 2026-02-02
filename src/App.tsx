@@ -20,8 +20,6 @@ import { TaskManagement } from './pages/TaskManagement';
 import { Commissions } from './pages/Commissions';
 import { GroupHeads } from './pages/GroupHeads';
 import { AdminPanel } from './pages/AdminPanel';
-import { PricingPlans } from './pages/PricingPlans';
-import { SubscriptionPage } from './pages/SubscriptionPage';
 import { Profile } from './pages/Profile';
 import { ClientFolders } from './pages/ClientFolders';
 import { LeadsManagement } from './pages/LeadsManagement';
@@ -38,12 +36,6 @@ function App() {
               <Routes>
                 <Route path="/login" element={<Login />} />
                 <Route path="/signup" element={<Signup />} />
-                <Route path="/pricing" element={<PricingPlans />} />
-                <Route path="/subscription" element={
-                  <ProtectedRoute>
-                    <SubscriptionPage />
-                  </ProtectedRoute>
-                } />
                 <Route path="/admin" element={
                   <ProtectedRoute>
                     <AdminPanel />

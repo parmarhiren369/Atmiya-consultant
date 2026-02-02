@@ -24,10 +24,6 @@ const Login: React.FC = () => {
     
     // Regular users - check subscription
     if (user) {
-      // If subscription expired, redirect to pricing
-      if (user.role !== 'admin' && user.subscriptionStatus === 'expired') {
-        return <Navigate to="/pricing" replace />;
-      }
       // Otherwise redirect to dashboard
       return <Navigate to="/dashboard" replace />;
     }
@@ -40,16 +36,8 @@ const Login: React.FC = () => {
     try {
       await login(credentials);
       
-      // Check if there's an intended plan to subscribe to
-      const intendedPlan = sessionStorage.getItem('intendedPlan');
-      if (intendedPlan) {
-        sessionStorage.removeItem('intendedPlan');
-        navigate('/pricing');
-        toast.success('Login successful! Please select your plan.');
-      } else {
-        // Explicitly navigate to dashboard after successful login
-        navigate('/dashboard');
-      }
+      // Explicitly navigate to dashboard after successful login
+      navigate('/dashboard');
     } catch (error: any) {
       // Login failed - show error
       console.error('Login error:', error);
@@ -60,7 +48,7 @@ const Login: React.FC = () => {
 
   const handleGoToPricing = () => {
     setShowExpiredModal(false);
-    navigate('/pricing');
+    navigate('/support');
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {

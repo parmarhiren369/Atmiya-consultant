@@ -58,9 +58,6 @@ export const COLLECTIONS = {
   TEAM_MEMBER_PERMISSIONS: 'teamMemberPermissions',
   ACTIVITY_LOGS: 'activityLogs',
   GROUP_HEADS: 'groupHeads',
-  SUBSCRIPTION_PLANS: 'subscriptionPlans',
-  PAYMENT_HISTORY: 'paymentHistory',
-  USER_SUBSCRIPTIONS: 'userSubscriptions',
   POLICY_DELETION_REQUESTS: 'policyDeletionRequests',
   FOLLOW_UP_HISTORY: 'followUpHistory',
 };

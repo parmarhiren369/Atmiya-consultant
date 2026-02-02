@@ -6,7 +6,6 @@ import {
   Mail, 
   Calendar, 
   Shield, 
-  Crown, 
   Clock, 
   CheckCircle, 
   XCircle,
@@ -327,30 +326,12 @@ export function Profile() {
                 {/* Action Buttons */}
                 {user.role !== 'admin' && (
                   <div className="flex flex-wrap gap-3">
-                    {(user.subscriptionStatus === 'trial' || user.subscriptionStatus === 'expired') && (
-                      <button
-                        onClick={() => navigate('/pricing')}
-                        className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-sharp hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-sm hover:shadow-sm font-medium"
-                      >
-                        <Crown className="h-5 w-5" />
-                        <span>Upgrade to Premium</span>
-                        <ArrowRight className="h-4 w-4" />
-                      </button>
-                    )}
-                    {user.subscriptionStatus === 'active' && (
-                      <button
-                        onClick={() => navigate('/subscription')}
-                        className="flex items-center space-x-2 px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-sharp hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors duration-200 font-medium"
-                      >
-                        <Shield className="h-5 w-5" />
-                        <span>Manage Subscription</span>
-                      </button>
-                    )}
                     <button
-                      onClick={() => navigate('/pricing')}
-                      className="flex items-center space-x-2 px-6 py-3 border-2 border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-sharp hover:border-blue-500 dark:hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors duration-200 font-medium"
+                      onClick={() => navigate('/support')}
+                      className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-sharp hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-sm hover:shadow-sm font-medium"
                     >
-                      <span>View All Plans</span>
+                      <Shield className="h-5 w-5" />
+                      <span>Contact Support</span>
                       <ArrowRight className="h-4 w-4" />
                     </button>
                   </div>

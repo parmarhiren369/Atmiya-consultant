@@ -4,7 +4,6 @@ export { deletedPolicyService } from './deletedPolicyService';
 export { activityLogService } from './activityLogService';
 export { userService } from './userService';
 export { markPolicyAsLapsed, getLapsedPolicies, getLapsedPolicyById, removeLapsedPolicy } from './lapsedPolicyService';
-export { razorpayService } from './razorpayService';
 export { firebaseAuthService } from './firebaseAuthService';
 export { taskService } from './taskService';
 export { teamMemberService } from './teamMemberService';

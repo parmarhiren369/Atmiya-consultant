@@ -86,28 +86,6 @@ service cloud.firestore {
       allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
     }
     
-    // Subscription Plans collection (public read)
-    match /subscriptionPlans/{planId} {
-      allow read: if true; // Public read for pricing page
-      allow write: if false; // Admin only via Firebase Admin SDK
-    }
-    
-    // Payment History collection
-    match /paymentHistory/{paymentId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if false; // Created by backend only
-      allow update: if false; // Updated by backend only
-      allow delete: if false;
-    }
-    
-    // User Subscriptions collection
-    match /userSubscriptions/{subscriptionId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if false; // Created by backend only
-      allow update: if false; // Updated by backend only
-      allow delete: if false;
-    }
-    
     // Policy Deletion Requests collection
     match /policyDeletionRequests/{requestId} {
       allow read: if isAuthenticated();

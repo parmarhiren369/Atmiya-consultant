@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Plus, Bell, User, LogOut, Moon, Sun, Menu, X, Home, FileText, CheckSquare, Clock, XCircle, DollarSign, Activity, RotateCcw, HelpCircle, Percent, Users, Crown, UserCircle, FolderOpen, UserPlus, UsersRound } from 'lucide-react';
+import { Plus, Bell, User, LogOut, Moon, Sun, Menu, X, Home, FileText, CheckSquare, Clock, XCircle, DollarSign, Activity, RotateCcw, HelpCircle, Percent, Users, UserCircle, FolderOpen, UserPlus, UsersRound } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import toast from 'react-hot-toast';
@@ -108,21 +108,6 @@ export function Sidebar() {
               >
                 <Plus className="h-5 w-5 flex-shrink-0" />
                 {!isCollapsed && <span className="font-medium">Add Policy</span>}
-              </Link>
-            )}
-            {!isTeamMember && user?.role !== 'admin' && (user?.subscriptionStatus === 'trial' || user?.subscriptionStatus === 'expired') && (
-              <Link
-                to="/pricing"
-                onClick={() => setIsMobileOpen(false)}
-                className={`
-                  bg-amber-600 dark:bg-gradient-to-r dark:from-slate-700 dark:via-slate-600 dark:to-slate-700 text-white px-4 py-3 rounded-sharp 
-                  hover:bg-amber-700 dark:hover:from-slate-600 dark:hover:via-slate-500 dark:hover:to-slate-600 transition-all duration-200 
-                  flex items-center shadow-sm hover:shadow-md dark:border dark:border-slate-500/30
-                  ${isCollapsed ? 'justify-center' : 'space-x-2'}
-                `}
-              >
-                <Crown className="h-5 w-5 flex-shrink-0" />
-                {!isCollapsed && <span className="font-medium">Subscribe Now</span>}
               </Link>
             )}
             <Link
