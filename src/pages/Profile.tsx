@@ -1,4 +1,3 @@
-import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -6,105 +5,14 @@ import {
   Mail, 
   Calendar, 
   Shield, 
-  Clock, 
-  CheckCircle, 
-  XCircle,
+  CheckCircle,
   AlertCircle,
-  ArrowRight,
-  Sparkles
+  Crown
 } from 'lucide-react';
 
 export function Profile() {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
-  const [subscriptionPlan, setSubscriptionPlan] = useState<string>('Free Trial');
-
-  const calculateDaysRemaining = useCallback(() => {
-    if (!user) return;
-
-    const now = new Date();
-    let endDate: Date | undefined;
-
-    if (user.subscriptionStatus === 'active' && user.subscriptionEndDate) {
-      endDate = new Date(user.subscriptionEndDate);
-    } else if (user.subscriptionStatus === 'trial' && user.trialEndDate) {
-      endDate = new Date(user.trialEndDate);
-    }
-
-    if (endDate) {
-      const timeDiff = endDate.getTime() - now.getTime();
-      const days = Math.ceil(timeDiff / (1000 * 3600 * 24));
-      setDaysRemaining(days > 0 ? days : 0);
-    }
-  }, [user]);
-
-  const determineSubscriptionPlan = useCallback(() => {
-    if (!user) return;
-
-    if (user.role === 'admin') {
-      setSubscriptionPlan('Admin Account');
-    } else if (user.subscriptionStatus === 'active') {
-      setSubscriptionPlan('Premium Plan');
-    } else if (user.subscriptionStatus === 'trial') {
-      setSubscriptionPlan('Free Trial');
-    } else if (user.subscriptionStatus === 'expired') {
-      setSubscriptionPlan('Expired');
-    } else {
-      setSubscriptionPlan('No Plan');
-    }
-  }, [user]);
-
-  useEffect(() => {
-    if (user) {
-      calculateDaysRemaining();
-      determineSubscriptionPlan();
-    }
-  }, [user, calculateDaysRemaining, determineSubscriptionPlan]);
-
-  const getStatusBadge = () => {
-    if (!user) return null;
-
-    const statusConfig = {
-      trial: {
-        icon: <Clock className="h-4 w-4" />,
-        text: 'Trial Period',
-        bgColor: 'bg-blue-100 dark:bg-blue-900/30',
-        textColor: 'text-blue-700 dark:text-blue-400',
-        borderColor: 'border-blue-200 dark:border-blue-800'
-      },
-      active: {
-        icon: <CheckCircle className="h-4 w-4" />,
-        text: 'Active Subscription',
-        bgColor: 'bg-green-100 dark:bg-green-900/30',
-        textColor: 'text-green-700 dark:text-green-400',
-        borderColor: 'border-green-200 dark:border-green-800'
-      },
-      expired: {
-        icon: <XCircle className="h-4 w-4" />,
-        text: 'Expired',
-        bgColor: 'bg-red-100 dark:bg-red-900/30',
-        textColor: 'text-red-700 dark:text-red-400',
-        borderColor: 'border-red-200 dark:border-red-800'
-      },
-      locked: {
-        icon: <AlertCircle className="h-4 w-4" />,
-        text: 'Account Locked',
-        bgColor: 'bg-orange-100 dark:bg-orange-900/30',
-        textColor: 'text-orange-700 dark:text-orange-400',
-        borderColor: 'border-orange-200 dark:border-orange-800'
-      }
-    };
-
-    const config = statusConfig[user.subscriptionStatus] || statusConfig.trial;
-
-    return (
-      <div className={`inline-flex items-center space-x-2 px-4 py-2 rounded-full border ${config.bgColor} ${config.textColor} ${config.borderColor}`}>
-        {config.icon}
-        <span className="font-medium">{config.text}</span>
-      </div>
-    );
-  };
 
   const formatDate = (date: Date | undefined) => {
     if (!date) return 'N/A';
@@ -132,7 +40,7 @@ export function Profile() {
             My Profile
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Manage your account settings and subscription
+            Manage your account settings
           </p>
         </div>
 
@@ -208,134 +116,34 @@ export function Profile() {
             {/* Divider */}
             <div className="border-t border-gray-200 dark:border-gray-700"></div>
 
-            {/* Subscription Section */}
+            {/* Account Status Section */}
             <div>
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4 flex items-center space-x-2">
-                <Sparkles className="h-5 w-5 text-purple-600" />
-                <span>Subscription Details</span>
+                <CheckCircle className="h-5 w-5 text-green-600" />
+                <span>Account Status</span>
               </h3>
 
-              <div className="space-y-6">
-                {/* Current Status Badge */}
+              <div className="space-y-4">
+                {/* Status Badge */}
                 <div className="flex items-center justify-between flex-wrap gap-4">
                   <div>
                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
                       Current Status
                     </p>
-                    {getStatusBadge()}
+                    <div className="inline-flex items-center space-x-2 px-4 py-2 rounded-full border bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800">
+                      <CheckCircle className="h-4 w-4" />
+                      <span className="font-medium">Active</span>
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
-                      Subscription Plan
+                      Account Type
                     </p>
                     <p className="text-xl font-bold text-gray-900 dark:text-white">
-                      {subscriptionPlan}
+                      {user.role === 'admin' ? 'Admin Account' : 'Full Access'}
                     </p>
                   </div>
                 </div>
-
-                {/* Subscription Dates */}
-                {user.role !== 'admin' && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {user.subscriptionStatus === 'trial' && user.trialStartDate && (
-                      <>
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center space-x-1">
-                            <Calendar className="h-4 w-4" />
-                            <span>Trial Started</span>
-                          </label>
-                          <p className="text-gray-900 dark:text-white font-medium">
-                            {formatDate(user.trialStartDate)}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center space-x-1">
-                            <Calendar className="h-4 w-4" />
-                            <span>Trial Ends</span>
-                          </label>
-                          <p className="text-gray-900 dark:text-white font-medium">
-                            {formatDate(user.trialEndDate)}
-                          </p>
-                        </div>
-                      </>
-                    )}
-                    {user.subscriptionStatus === 'active' && user.subscriptionStartDate && (
-                      <>
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center space-x-1">
-                            <Calendar className="h-4 w-4" />
-                            <span>Subscription Started</span>
-                          </label>
-                          <p className="text-gray-900 dark:text-white font-medium">
-                            {formatDate(user.subscriptionStartDate)}
-                          </p>
-                        </div>
-                        <div className="space-y-1">
-                          <label className="text-sm font-medium text-gray-500 dark:text-gray-400 flex items-center space-x-1">
-                            <Calendar className="h-4 w-4" />
-                            <span>Renews On</span>
-                          </label>
-                          <p className="text-gray-900 dark:text-white font-medium">
-                            {formatDate(user.subscriptionEndDate)}
-                          </p>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                )}
-
-                {/* Days Remaining Alert */}
-                {user.role !== 'admin' && daysRemaining !== null && daysRemaining >= 0 && (
-                  <div className={`p-4 rounded-sharp border ${
-                    daysRemaining <= 7 
-                      ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800' 
-                      : 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-                  }`}>
-                    <div className="flex items-center space-x-3">
-                      <Clock className={`h-5 w-5 ${
-                        daysRemaining <= 7 
-                          ? 'text-orange-600 dark:text-orange-400' 
-                          : 'text-blue-600 dark:text-blue-400'
-                      }`} />
-                      <div className="flex-1">
-                        <p className={`font-medium ${
-                          daysRemaining <= 7 
-                            ? 'text-orange-900 dark:text-orange-200' 
-                            : 'text-blue-900 dark:text-blue-200'
-                        }`}>
-                          {daysRemaining === 0 
-                            ? 'Expires today!' 
-                            : `${daysRemaining} day${daysRemaining === 1 ? '' : 's'} remaining`
-                          }
-                        </p>
-                        <p className={`text-sm ${
-                          daysRemaining <= 7 
-                            ? 'text-orange-700 dark:text-orange-300' 
-                            : 'text-blue-700 dark:text-blue-300'
-                        }`}>
-                          {user.subscriptionStatus === 'trial' 
-                            ? 'Subscribe now to continue using all features' 
-                            : 'Your subscription will renew automatically'
-                          }
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Action Buttons */}
-                {user.role !== 'admin' && (
-                  <div className="flex flex-wrap gap-3">
-                    <button
-                      onClick={() => navigate('/support')}
-                      className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-sharp hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-sm hover:shadow-sm font-medium"
-                    >
-                      <Shield className="h-5 w-5" />
-                      <span>Contact Support</span>
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                )}
 
                 {user.role === 'admin' && (
                   <div className="p-4 rounded-sharp bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
@@ -347,12 +155,23 @@ export function Profile() {
                     </div>
                   </div>
                 )}
+
+                {user.role !== 'admin' && (
+                  <div className="p-4 rounded-sharp bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800">
+                    <div className="flex items-center space-x-3">
+                      <CheckCircle className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                      <p className="text-blue-900 dark:text-blue-200 font-medium">
+                        You have full access to all features.
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Account Status Information */}
+        {/* Account Locked Warning */}
         {user.isLocked && (
           <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-card p-6 mb-6">
             <div className="flex items-start space-x-3">
@@ -379,7 +198,7 @@ export function Profile() {
           </div>
         )}
 
-        {/* Additional Information */}
+        {/* Security Information */}
         <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-card p-6">
           <div className="flex items-start space-x-3">
             <Shield className="h-6 w-6 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
@@ -392,6 +211,17 @@ export function Profile() {
               </p>
             </div>
           </div>
+        </div>
+
+        {/* Support Button */}
+        <div className="mt-6 flex justify-center">
+          <button
+            onClick={() => navigate('/support')}
+            className="flex items-center space-x-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-sm hover:shadow-md font-medium"
+          >
+            <Shield className="h-5 w-5" />
+            <span>Contact Support</span>
+          </button>
         </div>
       </div>
     </div>

@@ -30,15 +30,10 @@ const mapDocToUser = (id: string, data: Record<string, unknown>): AppUser => ({
   isActive: (data.isActive as boolean) ?? true,
   createdAt: toDate(data.createdAt as Timestamp | string) || new Date(),
   lastLogin: toDate(data.lastLogin as Timestamp | string),
-  subscriptionStatus: (data.subscriptionStatus as AppUser['subscriptionStatus']) || 'trial',
   isLocked: (data.isLocked as boolean) || false,
   lockedReason: data.lockedReason as string,
   lockedBy: data.lockedBy as string,
   lockedAt: toDate(data.lockedAt as Timestamp | string),
-  trialStartDate: toDate(data.trialStartDate as Timestamp | string),
-  trialEndDate: toDate(data.trialEndDate as Timestamp | string),
-  subscriptionStartDate: toDate(data.subscriptionStartDate as Timestamp | string),
-  subscriptionEndDate: toDate(data.subscriptionEndDate as Timestamp | string),
 });
 
 export class UserService {
@@ -159,35 +154,6 @@ export class UserService {
     }
   }
 
-  async updateSubscription(
-    userId: string, 
-    subscriptionStatus: AppUser['subscriptionStatus'],
-    startDate?: Date,
-    endDate?: Date
-  ): Promise<void> {
-    try {
-      const updateData: Record<string, unknown> = {
-        subscriptionStatus,
-      };
-      
-      if (startDate) updateData.subscriptionStartDate = startDate.toISOString();
-      if (endDate) updateData.subscriptionEndDate = endDate.toISOString();
-
-      await updateDoc(doc(db, COLLECTIONS.USERS, userId), updateData);
-
-      // Local backup
-      await localBackupService.backup('users', {
-        action: 'UPDATE',
-        data: { id: userId, ...updateData },
-        userId: undefined,
-        userName: undefined,
-        timestamp: new Date().toISOString(),
-      });
-    } catch (error) {
-      console.error('Error updating subscription:', error);
-      throw error;
-    }
-  }
 }
 
 export const userService = UserService.getInstance();

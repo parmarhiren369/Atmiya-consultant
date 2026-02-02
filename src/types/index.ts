@@ -207,12 +207,7 @@ export interface AppUser {
   isActive: boolean;
   createdAt: Date;
   lastLogin?: Date;
-  // Subscription fields for SaaS
-  subscriptionStatus: 'trial' | 'active' | 'expired' | 'locked';
-  trialStartDate?: Date;
-  trialEndDate?: Date;
-  subscriptionStartDate?: Date;
-  subscriptionEndDate?: Date;
+  // Admin control fields
   isLocked: boolean;
   lockedReason?: string;
   lockedBy?: string; // Admin ID who locked
@@ -231,16 +226,6 @@ export interface FirebaseUserData {
   created_at?: string;
   lastLogin?: string;
   last_login?: string;
-  subscriptionStatus?: string;
-  subscription_status?: string;
-  trialStartDate?: string;
-  trial_start_date?: string;
-  trialEndDate?: string;
-  trial_end_date?: string;
-  subscriptionStartDate?: string;
-  subscription_start_date?: string;
-  subscriptionEndDate?: string;
-  subscription_end_date?: string;
   isLocked?: boolean;
   is_locked?: boolean;
   lockedReason?: string;

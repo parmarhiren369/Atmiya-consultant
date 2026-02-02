@@ -6,7 +6,6 @@ import { useAuth } from '../context/AuthContext';
 import { PolicyFormData, AIExtractedData, Policy } from '../types';
 import { FileText, User, Save, ArrowLeft, Upload, Sparkles, ToggleLeft, ToggleRight, Lock, X, ChevronDown } from 'lucide-react';
 import { getWebhookUrl, debugLog, config } from '../config/webhookConfig';
-import { UpgradeModal } from '../components/UpgradeModal';
 import { storageService } from '../services/storageService';
 import toast from 'react-hot-toast';
 
@@ -144,8 +143,6 @@ export function AddPolicy() {
   const [groupHeads, setGroupHeads] = useState<Array<{id: string, name: string}>>([]);
   const [isLoadingGroupHeads, setIsLoadingGroupHeads] = useState(true);
   
-  // Upgrade modal state
-  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
   // Fetch group heads on component mount
   useEffect(() => {
@@ -1571,37 +1568,22 @@ export function AddPolicy() {
               </div>
               
               <div className="flex items-center flex-wrap gap-4">
-                {/* Check if user subscription expired - lock the feature (trial users can use it) */}
-                {user?.subscriptionStatus === 'expired' && user?.role !== 'admin' ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowUpgradeModal(true)}
-                    className="relative flex items-center px-6 py-3 bg-gray-400 dark:bg-gray-600 text-white rounded-lg transition-all duration-200 cursor-not-allowed shadow-lg opacity-75"
-                  >
-                    <div className="absolute -top-2 -right-2 bg-yellow-500 rounded-full p-1 shadow-md">
-                      <Lock className="h-4 w-4 text-white" />
-                    </div>
-                    <Upload className="h-5 w-5 mr-2" />
-                    Upload PDF(s) for AI Analysis
-                  </button>
-                ) : (
-                  <label className={`flex items-center px-6 py-3 ${
-                    isAIProcessing 
-                      ? 'bg-gray-400 cursor-not-allowed' 
-                      : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
-                  } text-white rounded-lg transition-all duration-200 cursor-pointer shadow-lg hover:shadow-xl`}>
-                    <Upload className="h-5 w-5 mr-2" />
-                    {isAIProcessing ? 'Processing...' : 'Upload PDF(s) for AI Analysis'}
-                    <input
-                      type="file"
-                      accept=".pdf"
-                      multiple
-                      onChange={handleFileUpload}
-                      className="hidden"
-                      disabled={isAIProcessing}
-                    />
-                  </label>
-                )}
+                <label className={`flex items-center px-6 py-3 ${
+                  isAIProcessing 
+                    ? 'bg-gray-400 cursor-not-allowed' 
+                    : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700'
+                } text-white rounded-lg transition-all duration-200 cursor-pointer shadow-lg hover:shadow-xl`}>
+                  <Upload className="h-5 w-5 mr-2" />
+                  {isAIProcessing ? 'Processing...' : 'Upload PDF(s) for AI Analysis'}
+                  <input
+                    type="file"
+                    accept=".pdf"
+                    multiple
+                    onChange={handleFileUpload}
+                    className="hidden"
+                    disabled={isAIProcessing}
+                  />
+                </label>
                 
                 {/* Multi-file mode controls */}
                 {isMultiFileMode && (
@@ -2552,12 +2534,6 @@ export function AddPolicy() {
         </div>
       </div>
       
-      {/* Upgrade Modal */}
-      <UpgradeModal 
-        isOpen={showUpgradeModal}
-        onClose={() => setShowUpgradeModal(false)}
-        feature="AI-Powered Document Analysis"
-      />
     </div>
     </>
   );

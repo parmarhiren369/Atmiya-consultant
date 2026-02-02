@@ -122,23 +122,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setPageAccess([]); // Admin/regular users have full access
         setEffectiveUserId(authenticatedUser.id); // Use own ID
         
-        // Check if subscription is expired
-        if (authenticatedUser.role !== 'admin' && authenticatedUser.subscriptionStatus === 'expired') {
-          toast.error('Your subscription has expired. Please subscribe to continue.', { duration: 5000 });
-        } else {
-          toast.success(`Welcome back, ${authenticatedUser.displayName}!`);
-          
-          // Show subscription warning if needed
-          const daysRemaining = firebaseAuthService.getDaysRemaining(authenticatedUser);
-          if (daysRemaining <= 5 && daysRemaining > 0) {
-            setTimeout(() => {
-              toast(
-                `Your ${authenticatedUser.subscriptionStatus === 'trial' ? 'trial' : 'subscription'} expires in ${daysRemaining} days!`,
-                { duration: 6000, icon: '⚠️' }
-              );
-            }, 2000);
-          }
-        }
+        toast.success(`Welcome back, ${authenticatedUser.displayName}!`);
       }
     } catch (error) {
       throw error;

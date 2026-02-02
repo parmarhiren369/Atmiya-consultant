@@ -9,10 +9,6 @@ import { doc, setDoc, getDoc, updateDoc } from 'firebase/firestore';
 import { auth, db, COLLECTIONS } from '../config/firebase';
 import { AppUser, SignupCredentials, LoginCredentials } from '../types';
 
-const TRIAL_DAYS = 15;
-// Set to true to bypass subscription checks during development/testing
-const DEV_MODE = false;
-
 interface FirestoreUserData {
   id: string;
   email: string;
@@ -21,11 +17,6 @@ interface FirestoreUserData {
   isActive: boolean;
   createdAt: string;
   lastLogin?: string;
-  subscriptionStatus: 'trial' | 'active' | 'expired' | 'locked';
-  trialStartDate?: string;
-  trialEndDate?: string;
-  subscriptionStartDate?: string;
-  subscriptionEndDate?: string;
   isLocked: boolean;
   lockedReason?: string;
   lockedBy?: string;
@@ -50,11 +41,6 @@ export class FirebaseAuthService {
       const firebaseUser = userCredential.user;
       console.log('Auth user created:', firebaseUser.uid);
 
-      // Calculate trial dates
-      const trialStartDate = new Date();
-      const trialEndDate = new Date();
-      trialEndDate.setDate(trialEndDate.getDate() + TRIAL_DAYS);
-
       // Create user profile in Firestore
       const userProfileData: FirestoreUserData = {
         id: firebaseUser.uid,
@@ -63,9 +49,6 @@ export class FirebaseAuthService {
         role: credentials.isAdmin ? 'admin' : 'user',
         isActive: true,
         createdAt: new Date().toISOString(),
-        subscriptionStatus: credentials.isAdmin ? 'active' : 'trial',
-        trialStartDate: credentials.isAdmin ? undefined : trialStartDate.toISOString(),
-        trialEndDate: credentials.isAdmin ? undefined : trialEndDate.toISOString(),
         isLocked: false,
       };
 
@@ -85,9 +68,6 @@ export class FirebaseAuthService {
           email: parsedUser.email,
           displayName: parsedUser.displayName,
           role: parsedUser.role,
-          subscriptionStatus: parsedUser.subscriptionStatus,
-          trialStartDate: parsedUser.trialStartDate,
-          trialEndDate: parsedUser.trialEndDate,
           createdAt: parsedUser.createdAt,
           timestamp: new Date().toISOString(),
         };
@@ -146,16 +126,10 @@ export class FirebaseAuthService {
         return { user: null, error: `Account locked: ${user.lockedReason || 'Contact admin'}` };
       }
 
-      // Check and update subscription status
-      let finalUser = user;
-      if (!DEV_MODE) {
-        finalUser = await this.checkAndUpdateSubscriptionStatus(user);
-      }
-
       // Update last login
       await updateDoc(userDocRef, { lastLogin: new Date().toISOString() });
 
-      return { user: { ...finalUser, lastLogin: new Date() }, error: null };
+      return { user: { ...user, lastLogin: new Date() }, error: null };
     } catch (error) {
       console.error('Signin error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Login failed';
@@ -200,8 +174,7 @@ export class FirebaseAuthService {
 
           const profileData = userDoc.data() as FirestoreUserData;
           const user = this.parseUserData(profileData);
-          const updatedUser = await this.checkAndUpdateSubscriptionStatus(user);
-          resolve(updatedUser);
+          resolve(user);
         } catch (error) {
           console.error('Error getting current user:', error);
           resolve(null);
@@ -231,70 +204,12 @@ export class FirebaseAuthService {
   }
 
   /**
-   * Check and update subscription status
-   */
-  private async checkAndUpdateSubscriptionStatus(user: AppUser): Promise<AppUser> {
-    if (user.role === 'admin') return user;
-
-    const now = new Date();
-    let needsUpdate = false;
-    let newStatus = user.subscriptionStatus;
-
-    // Check if trial expired
-    if (user.subscriptionStatus === 'trial' && user.trialEndDate) {
-      if (now > user.trialEndDate) {
-        newStatus = 'expired';
-        needsUpdate = true;
-      }
-    }
-
-    // Check if active subscription expired
-    if (user.subscriptionStatus === 'active' && user.subscriptionEndDate) {
-      if (now > user.subscriptionEndDate) {
-        newStatus = 'expired';
-        needsUpdate = true;
-      }
-    }
-
-    if (needsUpdate) {
-      const userDocRef = doc(db, COLLECTIONS.USERS, user.id);
-      await updateDoc(userDocRef, { subscriptionStatus: newStatus });
-      return { ...user, subscriptionStatus: newStatus };
-    }
-
-    return user;
-  }
-
-  /**
-   * Calculate days remaining
-   */
-  getDaysRemaining(user: AppUser): number {
-    if (user.role === 'admin') return Infinity;
-
-    const now = new Date();
-    let endDate: Date | undefined;
-
-    if (user.subscriptionStatus === 'trial') {
-      endDate = user.trialEndDate;
-    } else if (user.subscriptionStatus === 'active') {
-      endDate = user.subscriptionEndDate;
-    }
-
-    if (!endDate) return 0;
-
-    const diffTime = endDate.getTime() - now.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-    return Math.max(0, diffDays);
-  }
-
-  /**
    * Check if user can access system
+   * Simple check - just verify user is not locked
    */
   canAccessSystem(user: AppUser): boolean {
-    if (user.role === 'admin') return true;
     if (user.isLocked) return false;
-    return user.subscriptionStatus === 'trial' || user.subscriptionStatus === 'active';
+    return true;
   }
 
   /**
@@ -309,11 +224,6 @@ export class FirebaseAuthService {
       isActive: data.isActive ?? true,
       createdAt: new Date(data.createdAt || Date.now()),
       lastLogin: data.lastLogin ? new Date(data.lastLogin) : undefined,
-      subscriptionStatus: data.subscriptionStatus || 'trial',
-      trialStartDate: data.trialStartDate ? new Date(data.trialStartDate) : undefined,
-      trialEndDate: data.trialEndDate ? new Date(data.trialEndDate) : undefined,
-      subscriptionStartDate: data.subscriptionStartDate ? new Date(data.subscriptionStartDate) : undefined,
-      subscriptionEndDate: data.subscriptionEndDate ? new Date(data.subscriptionEndDate) : undefined,
       isLocked: data.isLocked ?? false,
       lockedReason: data.lockedReason,
       lockedBy: data.lockedBy,
@@ -355,4 +265,3 @@ export class FirebaseAuthService {
 }
 
 export const firebaseAuthService = new FirebaseAuthService();
-

@@ -2,8 +2,7 @@ import React, { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { LoginCredentials } from '../types';
 import { Link, useNavigate, Navigate } from 'react-router-dom';
-import { Mail, Lock, CreditCard, XCircle } from 'lucide-react';
-import toast from 'react-hot-toast';
+import { Mail, Lock } from 'lucide-react';
 
 const Login: React.FC = () => {
   const [credentials, setCredentials] = useState<LoginCredentials>({
@@ -11,7 +10,6 @@ const Login: React.FC = () => {
     password: ''
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [showExpiredModal, setShowExpiredModal] = useState(false);
   const { login, user, teamMember, isTeamMember } = useAuth();
   const navigate = useNavigate();
 
@@ -22,9 +20,8 @@ const Login: React.FC = () => {
       return <Navigate to="/dashboard" replace />;
     }
     
-    // Regular users - check subscription
+    // Regular users - redirect to dashboard
     if (user) {
-      // Otherwise redirect to dashboard
       return <Navigate to="/dashboard" replace />;
     }
   }
@@ -46,11 +43,6 @@ const Login: React.FC = () => {
     }
   };
 
-  const handleGoToPricing = () => {
-    setShowExpiredModal(false);
-    navigate('/support');
-  };
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setCredentials(prev => ({
@@ -61,40 +53,6 @@ const Login: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-indigo-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 flex items-center justify-center p-4">
-      {/* Subscription Expired Modal */}
-      {showExpiredModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl max-w-md w-full p-8 animate-in fade-in zoom-in duration-300">
-            <div className="text-center">
-              <div className="mx-auto flex items-center justify-center h-16 w-16 rounded-full bg-red-100 dark:bg-red-900/30 mb-4">
-                <XCircle className="h-10 w-10 text-red-600 dark:text-red-400" />
-              </div>
-              <h3 className="text-2xl font-bold text-gray-900 dark:text-white mb-3">
-                Subscription Required
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-6">
-                Your subscription has expired or is inactive. Please choose a plan to continue using the application.
-              </p>
-              <div className="space-y-3">
-                <button
-                  onClick={handleGoToPricing}
-                  className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 px-6 rounded-lg font-semibold hover:from-blue-700 hover:to-indigo-700 transition-all duration-200 shadow-lg hover:shadow-xl flex items-center justify-center gap-2"
-                >
-                  <CreditCard className="w-5 h-5" />
-                  View Subscription Plans
-                </button>
-                <button
-                  onClick={() => setShowExpiredModal(false)}
-                  className="w-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 py-3 px-6 rounded-lg font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-all duration-200"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className="max-w-md w-full">
         {/* Logo */}
         <div className="text-center mb-8">
@@ -182,13 +140,6 @@ const Login: React.FC = () => {
               >
                 Sign up for free
               </Link>
-            </p>
-          </div>
-
-          {/* Trial Info */}
-          <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-            <p className="text-xs text-green-800 dark:text-green-200 text-center">
-              🎉 New users get <strong>15 days free trial</strong>
             </p>
           </div>
         </div>

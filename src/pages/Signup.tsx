@@ -48,7 +48,7 @@ export function Signup() {
       }
 
       if (user) {
-        toast.success('15-day free trial activated! Welcome aboard!');
+        toast.success('Account created successfully! Welcome aboard!');
 
         // Redirect to login
         setTimeout(() => navigate('/login'), 1500);
@@ -73,7 +73,7 @@ export function Signup() {
             Create Account
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Get started with 15 days free trial
+            Get started with full access to all features
           </p>
         </div>
 
@@ -172,13 +172,6 @@ export function Signup() {
               )}
             </button>
           </form>
-
-          {/* Trial Info */}
-          <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              🎉 <strong>15-day free trial</strong> - No credit card required. Full access to all features!
-            </p>
-          </div>
 
           {/* Login Link */}
           <div className="mt-6 text-center">
