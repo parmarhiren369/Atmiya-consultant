@@ -327,10 +327,13 @@ export interface TeamMember {
   adminUserId: string; // The admin who created this team member
   email: string;
   passwordHash: string;
+  password?: string; // For handling raw password during creation/update
   fullName: string;
+  mobileNo?: string; // Mobile number
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
+  lastLogin?: Date; // Last login timestamp
   permissions?: TeamMemberPermissions;
 }
 

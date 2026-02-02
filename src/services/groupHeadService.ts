@@ -9,10 +9,12 @@ import {
   query, 
   where, 
   orderBy,
-  Timestamp
+  Timestamp,
+  FieldValue
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
 import { localBackupService } from './localBackupService';
+import { Policy } from '../types';
 
 export interface GroupHead {
   id: string;
@@ -156,7 +158,7 @@ export const groupHeadService = {
   // Update a group head - saves to local backup FIRST
   updateGroupHead: async (id: string, updates: Partial<GroupHead>): Promise<void> => {
     const now = new Date().toISOString();
-    const updateData: Record<string, unknown> = {
+    const updateData: { [key: string]: string | number | boolean | undefined | null | FieldValue } = {
       updatedAt: now,
     };
     
@@ -210,7 +212,7 @@ export const groupHeadService = {
   },
 
   // Get policies for a specific group head
-  getGroupHeadPolicies: async (groupHeadId: string) => {
+  getGroupHeadPolicies: async (groupHeadId: string): Promise<Policy[]> => {
     try {
       const q = query(
         collection(db, COLLECTIONS.POLICIES),
@@ -222,7 +224,7 @@ export const groupHeadService = {
       return querySnapshot.docs.map(docSnap => ({
         id: docSnap.id,
         ...docSnap.data()
-      }));
+      })) as Policy[];
     } catch (error) {
       console.error('Error getting group head policies:', error);
       throw error;

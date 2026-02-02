@@ -64,8 +64,8 @@ export function TaskManagementDashboard({
       setAllUsers(users);
 
       // Load team members if master admin
-      if (userRole === 'master_admin') {
-        const members = await teamMemberService.getTeamMembers();
+      if (userRole === 'master_admin' && currentUserId) {
+        const members = await teamMemberService.getTeamMembers(currentUserId);
         setTeamMembers(members);
       }
 
@@ -132,7 +132,7 @@ export function TaskManagementDashboard({
 
   const handleToggleTeamMemberStatus = async (id: string, name: string, currentStatus: boolean) => {
     try {
-      await teamMemberService.toggleTeamMemberStatus(id);
+      await teamMemberService.toggleTeamMemberStatus(id, !currentStatus);
       toast.success(`Team member "${name}" ${currentStatus ? 'deactivated' : 'activated'} successfully`);
       await loadData();
     } catch (error) {

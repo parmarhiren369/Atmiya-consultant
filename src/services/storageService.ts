@@ -248,4 +248,52 @@ export const storageService = {
       return null;
     }
   },
+
+  /**
+   * Initialize bucket (no-op for Firebase Storage as buckets are created automatically)
+   */
+  initializeBucket: async (): Promise<void> => {
+    // Firebase Storage doesn't require bucket initialization
+    console.log('Storage bucket initialized');
+  },
+
+  /**
+   * Upload multiple PDF files
+   */
+  uploadMultiplePDFs: async (
+    files: File[],
+    userId: string,
+    policyholderName?: string,
+    policyNumber?: string
+  ): Promise<UploadedFile[]> => {
+    const uploadPromises = files.map(file => {
+      if (policyholderName && policyNumber) {
+        return storageService.uploadPolicyDocument(file, userId, policyholderName, policyNumber);
+      }
+      return storageService.uploadFile(file, userId, 'policy-documents');
+    });
+    return Promise.all(uploadPromises);
+  },
+
+  /**
+   * Upload multiple client documents
+   */
+  uploadMultipleClientDocuments: async (
+    files: File[],
+    userId: string,
+    clientName: string,
+    policyNumber: string
+  ): Promise<UploadedFile[]> => {
+    const uploadPromises = files.map(file => 
+      storageService.uploadClientDocument(file, userId, clientName, policyNumber)
+    );
+    return Promise.all(uploadPromises);
+  },
+
+  /**
+   * Delete a client document
+   */
+  deleteClientDocument: async (filePath: string): Promise<void> => {
+    return storageService.deleteFile(filePath);
+  },
 };

@@ -10,7 +10,8 @@ import {
   where, 
   orderBy,
   Timestamp,
-  setDoc
+  setDoc,
+  FieldValue
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
 import { Policy } from '../types';
@@ -254,7 +255,7 @@ export const policyService = {
     userDisplayName?: string
   ): Promise<void> => {
     const now = new Date().toISOString();
-    const dbUpdates: Record<string, unknown> = {
+    const dbUpdates: { [key: string]: string | number | boolean | undefined | null | unknown[] | FieldValue } = {
       updatedAt: now
     };
     

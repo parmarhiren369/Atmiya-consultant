@@ -32,8 +32,6 @@ export function ClientFolders() {
     name: string;
     path: string;
     url: string;
-    size: number;
-    created_at: string;
   }>>([]);
   const [loadingDocuments, setLoadingDocuments] = useState(false);
 
@@ -115,7 +113,7 @@ export function ClientFolders() {
         selectedFolder.policyNumber // Policy number for uniqueness
       );
 
-      const successCount = results.filter((r) => r !== null).length;
+      const successCount = results.filter((r): r is { name: string; url: string; path: string } => r !== null).length;
       if (successCount > 0) {
         toast.success(`Successfully uploaded ${successCount} file(s)`);
         setUploadModalOpen(false);
@@ -171,34 +169,22 @@ export function ClientFolders() {
     if (!confirm('Are you sure you want to delete this document?')) return;
 
     try {
-      const deleted = await storageService.deleteClientDocument(filePath);
-      if (deleted) {
-        toast.success('Document deleted successfully');
-        // Reload documents for this specific customer
-        if (selectedFolder && effectiveUserId) {
-          const files = await storageService.listUserFiles(
-            effectiveUserId, 
-            'client-documents',
-            selectedFolder.policyholderName,
-            selectedFolder.policyNumber
-          );
-          setDocuments(files);
-        }
-      } else {
-        toast.error('Failed to delete document');
+      await storageService.deleteClientDocument(filePath);
+      toast.success('Document deleted successfully');
+      // Reload documents for this specific customer
+      if (selectedFolder && effectiveUserId) {
+        const files = await storageService.listUserFiles(
+          effectiveUserId, 
+          'client-documents',
+          selectedFolder.policyholderName,
+          selectedFolder.policyNumber
+        );
+        setDocuments(files);
       }
     } catch (error) {
       console.error('Error deleting document:', error);
       toast.error('Failed to delete document');
     }
-  };
-
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
   };
 
   const getFileIcon = (fileName: string) => {
@@ -506,7 +492,7 @@ export function ClientFolders() {
                             {doc.name.replace(/^\d+_/, '')}
                           </p>
                           <p className="text-xs text-slate-500 dark:text-gray-400">
-                            {formatFileSize(doc.size)} • {new Date(doc.created_at).toLocaleDateString()}
+                            Document
                           </p>
                         </div>
                       </div>

@@ -9,7 +9,8 @@ import {
   query, 
   where, 
   orderBy,
-  Timestamp
+  Timestamp,
+  FieldValue
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
 import { Lead, LeadFormData, FollowUpHistory } from '../types';
@@ -209,11 +210,14 @@ export const leadService = {
 
   // Update a lead
   // Saves to local backup FIRST, then to Firebase
-  updateLead: async (id: string, updates: Partial<LeadFormData>): Promise<void> => {
+  updateLead: async (id: string, updates: Partial<LeadFormData>, userId?: string, userDisplayName?: string): Promise<void> => {
     const now = new Date().toISOString();
-    const dbUpdates: Record<string, unknown> = {
+    const dbUpdates: { [key: string]: string | number | boolean | undefined | null | FieldValue } = {
       updatedAt: now
     };
+    
+    // Store userId and userDisplayName for backup (unused in current implementation but available for future use)
+    console.log(`Lead ${id} updated by ${userDisplayName || userId || 'unknown'}`);
 
     if (updates.customerName !== undefined) dbUpdates.customerName = updates.customerName;
     if (updates.customerMobile !== undefined) dbUpdates.customerMobile = updates.customerMobile;
@@ -248,15 +252,16 @@ export const leadService = {
 
   // Delete a lead
   // Saves to local backup FIRST, then deletes from Firebase
-  deleteLead: async (id: string): Promise<void> => {
+  deleteLead: async (id: string, userId?: string, userDisplayName?: string): Promise<void> => {
     const now = new Date().toISOString();
+    console.log(`Lead ${id} deleted by ${userDisplayName || userId || 'unknown'}`);
     
     // Local backup FIRST
     const localBackupPromise = localBackupService.backup('leads', {
       action: 'DELETE',
       data: { id, deletedAt: now },
-      userId: undefined,
-      userName: undefined,
+      userId: userId,
+      userName: userDisplayName,
       timestamp: now,
     });
 
@@ -425,6 +430,60 @@ export const leadService = {
     } catch (error) {
       console.error('Error in markAsConverted:', error);
       throw error;
+    }
+  },
+
+  // Get lead statistics
+  getLeadStatistics: async (userId?: string): Promise<{
+    total: number;
+    new: number;
+    followUp: number;
+    won: number;
+    lost: number;
+    conversionRate: number;
+  }> => {
+    try {
+      const leads = await leadService.getLeads(userId);
+      const total = leads.length;
+      const won = leads.filter(l => l.status === 'won').length;
+      const conversionRate = total > 0 ? Math.round((won / total) * 100) : 0;
+      
+      return {
+        total,
+        new: leads.filter(l => l.status === 'new').length,
+        followUp: leads.filter(l => l.status === 'follow_up').length,
+        won,
+        lost: leads.filter(l => l.status === 'lost').length,
+        conversionRate,
+      };
+    } catch (error) {
+      console.error('Error getting lead statistics:', error);
+      return { total: 0, new: 0, followUp: 0, won: 0, lost: 0, conversionRate: 0 };
+    }
+  },
+
+  // Get upcoming follow-ups
+  getUpcomingFollowUps: async (userId?: string, days: number = 7): Promise<Lead[]> => {
+    try {
+      const leads = await leadService.getLeads(userId);
+      const today = new Date();
+      const futureDate = new Date();
+      futureDate.setDate(today.getDate() + days);
+
+      return leads.filter(lead => {
+        const followUpDate = lead.nextFollowUpDate || lead.followUpDate;
+        if (!followUpDate) return false;
+        
+        const date = new Date(followUpDate);
+        return date >= today && date <= futureDate;
+      }).sort((a, b) => {
+        const dateA = new Date(a.nextFollowUpDate || a.followUpDate);
+        const dateB = new Date(b.nextFollowUpDate || b.followUpDate);
+        return dateA.getTime() - dateB.getTime();
+      });
+    } catch (error) {
+      console.error('Error getting upcoming follow-ups:', error);
+      return [];
     }
   },
 };

@@ -21,6 +21,13 @@ const toDate = (timestamp: Timestamp | string | undefined): Date | undefined => 
   return new Date(timestamp);
 };
 
+// Helper to safely convert Date or string to ISO string
+const toISOStringSafe = (date: Date | string | undefined): string | undefined => {
+  if (!date) return undefined;
+  if (date instanceof Date) return date.toISOString();
+  return date;
+};
+
 // Helper to map Firestore data to DeletedPolicy type
 const mapDocToDeletedPolicy = (id: string, data: Record<string, unknown>): DeletedPolicy => ({
   id,
@@ -98,16 +105,16 @@ export const deletedPolicyService = {
         policyType: deletedPolicy.policyType,
         premiumAmount: deletedPolicy.premiumAmount,
         coverageAmount: deletedPolicy.coverageAmount,
-        policyStartDate: deletedPolicy.policyStartDate?.toISOString(),
-        policyEndDate: deletedPolicy.policyEndDate?.toISOString(),
-        premiumDueDate: deletedPolicy.premiumDueDate?.toISOString(),
+        policyStartDate: toISOStringSafe(deletedPolicy.policyStartDate),
+        policyEndDate: toISOStringSafe(deletedPolicy.policyEndDate),
+        premiumDueDate: toISOStringSafe(deletedPolicy.premiumDueDate),
         status: deletedPolicy.status || 'active',
         paymentFrequency: deletedPolicy.paymentFrequency,
         nomineeName: deletedPolicy.nomineeName,
         nomineeRelationship: deletedPolicy.nomineeRelationship,
         notes: deletedPolicy.notes,
         documents: deletedPolicy.documents,
-        createdAt: deletedPolicy.createdAt?.toISOString() || now,
+        createdAt: toISOStringSafe(deletedPolicy.createdAt) || now,
         updatedAt: now,
       });
 

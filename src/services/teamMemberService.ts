@@ -8,10 +8,11 @@ import {
   deleteDoc, 
   query, 
   where,
-  Timestamp
+  Timestamp,
+  FieldValue
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
-import { TeamMember, TeamMemberPermissions } from '../types';
+import { TeamMember, TeamMemberPermissions, TeamMemberFormData } from '../types';
 import bcrypt from 'bcryptjs';
 import { localBackupService } from './localBackupService';
 
@@ -27,10 +28,11 @@ const mapDocToTeamMember = (id: string, data: Record<string, unknown>): TeamMemb
   id,
   adminUserId: data.adminUserId as string,
   email: data.email as string,
-  password: data.password as string,
+  passwordHash: (data.password as string) || (data.passwordHash as string) || '',
+  password: data.password as string | undefined,
   fullName: data.fullName as string,
-  mobileNo: data.mobileNo as string,
-  permissions: data.permissions as TeamMemberPermissions,
+  mobileNo: data.mobileNo as string | undefined,
+  permissions: data.permissions as TeamMemberPermissions | undefined,
   isActive: data.isActive as boolean,
   createdAt: toDate(data.createdAt as Timestamp | string) || new Date(),
   updatedAt: toDate(data.updatedAt as Timestamp | string) || new Date(),
@@ -72,22 +74,27 @@ export const teamMemberService = {
 
   // Create a new team member
   createTeamMember: async (
-    teamMemberData: Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'>
+    teamMemberData: Omit<TeamMember, 'id' | 'createdAt' | 'updatedAt'> | (TeamMemberFormData & { adminUserId?: string })
   ): Promise<string> => {
     try {
       // Hash the password before storing
       const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(teamMemberData.password, salt);
+      const passwordToHash = (teamMemberData as TeamMember).password || (teamMemberData as TeamMember).passwordHash || (teamMemberData as TeamMemberFormData).password || '';
+      const hashedPassword = await bcrypt.hash(passwordToHash, salt);
+
+      // Handle both TeamMember and TeamMemberFormData inputs
+      const pageAccessArray = (teamMemberData as TeamMemberFormData).pageAccess || 
+        ((teamMemberData as TeamMember).permissions?.pageAccess) || [];
 
       const now = new Date().toISOString();
       const memberWithTimestamps = {
-        adminUserId: teamMemberData.adminUserId,
+        adminUserId: (teamMemberData as TeamMember).adminUserId || '',
         email: teamMemberData.email.toLowerCase(),
         password: hashedPassword,
         fullName: teamMemberData.fullName,
-        mobileNo: teamMemberData.mobileNo || '',
-        permissions: teamMemberData.permissions || { pageAccess: [] },
-        isActive: teamMemberData.isActive ?? true,
+        mobileNo: (teamMemberData as TeamMember).mobileNo || '',
+        permissions: { pageAccess: pageAccessArray },
+        isActive: (teamMemberData as TeamMember).isActive ?? true,
         createdAt: now,
         updatedAt: now,
       };
@@ -118,7 +125,7 @@ export const teamMemberService = {
     updates: Partial<Omit<TeamMember, 'id' | 'createdAt' | 'adminUserId'>>
   ): Promise<void> => {
     try {
-      const updateData: Record<string, unknown> = {
+      const updateData: { [key: string]: string | boolean | TeamMemberPermissions | FieldValue | undefined } = {
         updatedAt: new Date().toISOString(),
       };
 
@@ -221,6 +228,50 @@ export const teamMemberService = {
       console.log('Team member permissions updated successfully');
     } catch (error) {
       console.error('Error updating team member permissions:', error);
+      throw error;
+    }
+  },
+
+  // Get team member count for an admin
+  getTeamMemberCount: async (adminUserId?: string): Promise<number> => {
+    try {
+      let q;
+      if (adminUserId) {
+        q = query(
+          collection(db, COLLECTIONS.TEAM_MEMBERS),
+          where('adminUserId', '==', adminUserId)
+        );
+      } else {
+        q = query(collection(db, COLLECTIONS.TEAM_MEMBERS));
+      }
+      const querySnapshot = await getDocs(q);
+      return querySnapshot.size;
+    } catch (error) {
+      console.error('Error getting team member count:', error);
+      return 0;
+    }
+  },
+
+  // Generate a random password
+  generatePassword: (length: number = 12): string => {
+    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+    let password = '';
+    for (let i = 0; i < length; i++) {
+      password += charset.charAt(Math.floor(Math.random() * charset.length));
+    }
+    return password;
+  },
+
+  // Toggle team member active status
+  toggleTeamMemberStatus: async (id: string, isActive: boolean): Promise<void> => {
+    try {
+      await updateDoc(doc(db, COLLECTIONS.TEAM_MEMBERS, id), {
+        isActive,
+        updatedAt: new Date().toISOString(),
+      });
+      console.log('Team member status toggled successfully');
+    } catch (error) {
+      console.error('Error toggling team member status:', error);
       throw error;
     }
   },

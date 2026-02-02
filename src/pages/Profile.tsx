@@ -3,7 +3,6 @@ import { useAuth } from '../context/AuthContext';
 import { 
   User, 
   Mail, 
-  Calendar, 
   Shield, 
   CheckCircle,
   AlertCircle,

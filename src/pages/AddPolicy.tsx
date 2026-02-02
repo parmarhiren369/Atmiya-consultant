@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { usePolicies } from '../context/PolicyContext';
 import { useAuth } from '../context/AuthContext';
 import { PolicyFormData, AIExtractedData, Policy } from '../types';
-import { FileText, User, Save, ArrowLeft, Upload, Sparkles, ToggleLeft, ToggleRight, Lock, X, ChevronDown } from 'lucide-react';
+import { FileText, User, Save, ArrowLeft, Upload, Sparkles, ToggleLeft, ToggleRight, X, ChevronDown } from 'lucide-react';
 import { getWebhookUrl, debugLog, config } from '../config/webhookConfig';
 import { storageService } from '../services/storageService';
 import toast from 'react-hot-toast';
@@ -835,7 +835,7 @@ export function AddPolicy() {
       // Upload files to Firebase Storage
       const uploadResults = await storageService.uploadMultiplePDFs(pdfFiles, effectiveUserId);
       
-      const successfulUploads = uploadResults.filter(result => result !== null) as Array<{ url: string; path: string; fileName: string }>;
+      const successfulUploads = uploadResults.filter((result): result is { name: string; url: string; path: string } => result !== null);
       
       if (successfulUploads.length === 0) {
         toast.error('Failed to upload files', { id: toastId });
@@ -873,10 +873,10 @@ export function AddPolicy() {
   const handleRemovePDF = async (index: number) => {
     const pdf = uploadedPDFs[index];
     
-    // Delete from Firebase Storage
-    const deleted = await storageService.deleteFile(pdf.path);
-    
-    if (deleted) {
+    try {
+      // Delete from Firebase Storage
+      await storageService.deleteFile(pdf.path);
+      
       const newUploadedPDFs = uploadedPDFs.filter((_, i) => i !== index);
       setUploadedPDFs(newUploadedPDFs);
       
@@ -898,7 +898,8 @@ export function AddPolicy() {
       }
       
       toast.success('File removed successfully');
-    } else {
+    } catch (error) {
+      console.error('Error removing file:', error);
       toast.error('Failed to remove file');
     }
   };
@@ -976,7 +977,7 @@ export function AddPolicy() {
         policyIdentifier // Use policy number as identifier
       );
       
-      const successfulUploads = uploadResults.filter(result => result !== null) as Array<{ url: string; path: string; fileName: string }>;
+      const successfulUploads = uploadResults.filter((result): result is { name: string; url: string; path: string } => result !== null);
       
       if (successfulUploads.length === 0) {
         toast.error('Failed to upload files', { id: toastId });
@@ -985,7 +986,7 @@ export function AddPolicy() {
 
       // Add to uploaded client docs list
       const newUploads = successfulUploads.map((result) => ({
-        file: files.find(f => f.name === result.fileName)!,
+        file: files.find(f => f.name === result.name)!,
         url: result.url,
         path: result.path
       }));
@@ -1014,10 +1015,10 @@ export function AddPolicy() {
   const handleRemoveClientDoc = async (index: number) => {
     const doc = uploadedClientDocs[index];
     
-    // Delete from Firebase Storage
-    const deleted = await storageService.deleteClientDocument(doc.path);
-    
-    if (deleted) {
+    try {
+      // Delete from Firebase Storage
+      await storageService.deleteClientDocument(doc.path);
+      
       const newUploadedDocs = uploadedClientDocs.filter((_, i) => i !== index);
       setUploadedClientDocs(newUploadedDocs);
       
@@ -1030,7 +1031,8 @@ export function AddPolicy() {
       }
       
       toast.success('Document removed successfully');
-    } else {
+    } catch (error) {
+      console.error('Error removing document:', error);
       toast.error('Failed to remove document');
     }
   };

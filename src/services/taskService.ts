@@ -9,7 +9,8 @@ import {
   query, 
   where, 
   orderBy,
-  Timestamp
+  Timestamp,
+  FieldValue
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
 import { Task } from '../types';
@@ -169,7 +170,7 @@ const getTasksByCreator = async (creatorId: string): Promise<Task[]> => {
 // Update task status - saves to local backup FIRST
 const updateTaskStatus = async (taskId: string, status: Task['status']): Promise<void> => {
   const now = new Date().toISOString();
-  const updateData: Record<string, unknown> = {
+  const updateData: { [key: string]: string | null | FieldValue | undefined } = {
     status,
     updatedAt: now,
   };
@@ -201,7 +202,7 @@ const updateTaskStatus = async (taskId: string, status: Task['status']): Promise
 // Update task details - saves to local backup FIRST
 const updateTask = async (taskId: string, updates: Partial<Omit<Task, 'id' | 'createdAt'>>): Promise<void> => {
   const now = new Date().toISOString();
-  const updateData: Record<string, unknown> = {
+  const updateData: { [key: string]: string | null | FieldValue | undefined } = {
     updatedAt: now,
   };
 

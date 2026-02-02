@@ -6,7 +6,7 @@ import { collection, getDocs, doc, updateDoc, query, orderBy } from 'firebase/fi
 import toast from 'react-hot-toast';
 import { 
   Users, Lock, Unlock,
-  CheckCircle, XCircle, Search, RefreshCw, Shield
+  CheckCircle, Search, RefreshCw, Shield
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
