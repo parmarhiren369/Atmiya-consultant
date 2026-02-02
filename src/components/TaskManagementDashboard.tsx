@@ -29,40 +29,6 @@ import { UserService } from '../services/userService';
 import { teamMemberService } from '../services/teamMemberService';
 import toast from 'react-hot-toast';
 
-// Mock data for sub admins (only needed for legacy components)
-const mockSubAdmins: SubAdmin[] = [
-  {
-    id: 'prakash_jadav',
-    userId: 'prakash_jadav',
-    displayName: 'Prakash Jadav',
-    email: 'prakash@demopolicymanager.com',
-    department: 'sales',
-    isActive: true,
-    createdAt: new Date('2025-09-01'),
-    createdBy: 'admin'
-  },
-  {
-    id: 'back_office',
-    userId: 'back_office',
-    displayName: 'Back Office',
-    email: 'backoffice@demopolicymanager.com',
-    department: 'operations',
-    isActive: true,
-    createdAt: new Date('2025-09-01'),
-    createdBy: 'admin'
-  },
-  {
-    id: 'arun_patel',
-    userId: 'arun_patel',
-    displayName: 'Arun Patel',
-    email: 'arun@demopolicymanager.com',
-    department: 'finance',
-    isActive: true,
-    createdAt: new Date('2025-09-01'),
-    createdBy: 'admin'
-  }
-];
-
 interface TaskManagementDashboardProps {
   userRole: 'master_admin' | 'sub_admin';
   currentUserId: string;
@@ -76,7 +42,7 @@ export function TaskManagementDashboard({
 }: TaskManagementDashboardProps) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [allUsers, setAllUsers] = useState<AppUser[]>([]);
-  const [subAdmins] = useState<SubAdmin[]>(mockSubAdmins);
+  const [subAdmins] = useState<SubAdmin[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [selectedTeamMember, setSelectedTeamMember] = useState<TeamMember | null>(null);

@@ -225,8 +225,7 @@ export function Support() {
                   <Phone className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-1" />
                   <div className="ml-3">
                     <h3 className="text-sm font-medium text-gray-900 dark:text-white">Phone</h3>
-                    <p className="text-gray-600 dark:text-gray-300">+91 98765 43210</p>
-                    <p className="text-gray-600 dark:text-gray-300">+91 12345 67890</p>
+                    <p className="text-gray-600 dark:text-gray-300">Contact your administrator</p>
                   </div>
                 </div>
                 
@@ -234,8 +233,8 @@ export function Support() {
                   <Mail className="h-5 w-5 text-gray-400 dark:text-gray-500 mt-1" />
                   <div className="ml-3">
                     <h3 className="text-sm font-medium text-gray-900 dark:text-white">Email</h3>
-                    <p className="text-gray-600 dark:text-gray-300">support@demopolicymanager.com</p>
-                    <p className="text-gray-600 dark:text-gray-300">info@demopolicymanager.com</p>
+                    <p className="text-gray-600 dark:text-gray-300">support@onclicks.in</p>
+                    <p className="text-gray-600 dark:text-gray-300">info@onclicks.in</p>
                   </div>
                 </div>
                 
