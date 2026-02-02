@@ -30,17 +30,16 @@ export const leadService = {
     try {
       console.log('Fetching leads for userId:', userId);
       
+      // Use simple query without orderBy to avoid requiring composite indexes
       let q;
       if (userId) {
         q = query(
           collection(db, COLLECTIONS.LEADS),
-          where('userId', '==', userId),
-          orderBy('createdAt', 'desc')
+          where('userId', '==', userId)
         );
       } else {
         q = query(
-          collection(db, COLLECTIONS.LEADS),
-          orderBy('createdAt', 'desc')
+          collection(db, COLLECTIONS.LEADS)
         );
       }
 
@@ -70,6 +69,13 @@ export const leadService = {
           convertedToPolicyId: data.convertedToPolicyId,
           isConverted: data.isConverted,
         };
+      });
+
+      // Sort by createdAt descending (newest first) in memory
+      leads.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
       });
 
       // Sync to local backup for future fallback

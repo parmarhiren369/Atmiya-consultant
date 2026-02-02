@@ -8,7 +8,6 @@ import {
   deleteDoc, 
   query, 
   where, 
-  orderBy,
   Timestamp,
   setDoc,
   FieldValue
@@ -39,17 +38,17 @@ export const policyService = {
     try {
       console.log('Fetching policies for userId:', userId);
       
+      // Use simple query without orderBy to avoid requiring composite indexes
+      // Sorting is done in memory after fetching
       let q;
       if (userId) {
         q = query(
           collection(db, COLLECTIONS.POLICIES),
-          where('userId', '==', userId),
-          orderBy('createdAt', 'desc')
+          where('userId', '==', userId)
         );
       } else {
         q = query(
-          collection(db, COLLECTIONS.POLICIES),
-          orderBy('createdAt', 'desc')
+          collection(db, COLLECTIONS.POLICIES)
         );
       }
 
@@ -110,6 +109,13 @@ export const policyService = {
       });
 
       console.log(`Found ${policies.length} active policies from Firebase`);
+      
+      // Sort by createdAt descending (newest first) in memory
+      policies.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
       
       // Sync to local backup for future fallback
       if (policies.length > 0) {

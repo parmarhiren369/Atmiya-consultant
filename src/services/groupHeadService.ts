@@ -8,7 +8,6 @@ import {
   deleteDoc, 
   query, 
   where, 
-  orderBy,
   Timestamp,
   FieldValue
 } from 'firebase/firestore';
@@ -58,16 +57,19 @@ export const groupHeadService = {
   // Get all group heads for a user - with fallback to local backup
   getGroupHeads: async (userId: string): Promise<GroupHead[]> => {
     try {
+      // Use simple query without orderBy to avoid composite indexes
       const q = query(
         collection(db, COLLECTIONS.GROUP_HEADS),
-        where('userId', '==', userId),
-        orderBy('groupHeadName', 'asc')
+        where('userId', '==', userId)
       );
       const querySnapshot = await getDocs(q);
 
       const groupHeads = querySnapshot.docs.map(docSnap => 
         mapDocToGroupHead(docSnap.id, docSnap.data())
       );
+
+      // Sort by groupHeadName ascending in memory
+      groupHeads.sort((a, b) => (a.groupHeadName || '').localeCompare(b.groupHeadName || ''));
 
       // Sync to local backup
       if (groupHeads.length > 0) {
@@ -214,17 +216,26 @@ export const groupHeadService = {
   // Get policies for a specific group head
   getGroupHeadPolicies: async (groupHeadId: string): Promise<Policy[]> => {
     try {
+      // Use simple query without orderBy to avoid composite indexes
       const q = query(
         collection(db, COLLECTIONS.POLICIES),
-        where('memberOf', '==', groupHeadId),
-        orderBy('createdAt', 'desc')
+        where('memberOf', '==', groupHeadId)
       );
       const querySnapshot = await getDocs(q);
 
-      return querySnapshot.docs.map(docSnap => ({
+      const policies = querySnapshot.docs.map(docSnap => ({
         id: docSnap.id,
         ...docSnap.data()
       })) as Policy[];
+
+      // Sort by createdAt descending in memory
+      policies.sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA;
+      });
+
+      return policies;
     } catch (error) {
       console.error('Error getting group head policies:', error);
       throw error;

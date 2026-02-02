@@ -132,16 +132,25 @@ const getAllTasks = async (): Promise<Task[]> => {
 // Get tasks assigned to a specific user
 const getTasksByAssignedUser = async (userId: string): Promise<Task[]> => {
   try {
+    // Use simple query without orderBy to avoid composite indexes
     const q = query(
       collection(db, COLLECTIONS.TASKS),
-      where('assignedTo', '==', userId),
-      orderBy('createdAt', 'desc')
+      where('assignedTo', '==', userId)
     );
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map(docSnap => 
+    const tasks = querySnapshot.docs.map(docSnap => 
       mapDocToTask(docSnap.id, docSnap.data())
     );
+
+    // Sort by createdAt descending in memory
+    tasks.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    return tasks;
   } catch (error) {
     console.error('Error fetching tasks for user:', error);
     throw error;
@@ -151,16 +160,25 @@ const getTasksByAssignedUser = async (userId: string): Promise<Task[]> => {
 // Get tasks created by a specific user (admin)
 const getTasksByCreator = async (creatorId: string): Promise<Task[]> => {
   try {
+    // Use simple query without orderBy to avoid composite indexes
     const q = query(
       collection(db, COLLECTIONS.TASKS),
-      where('assignedBy', '==', creatorId),
-      orderBy('createdAt', 'desc')
+      where('assignedBy', '==', creatorId)
     );
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map(docSnap => 
+    const tasks = querySnapshot.docs.map(docSnap => 
       mapDocToTask(docSnap.id, docSnap.data())
     );
+
+    // Sort by createdAt descending in memory
+    tasks.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    return tasks;
   } catch (error) {
     console.error('Error fetching tasks by creator:', error);
     throw error;
@@ -278,16 +296,25 @@ const getTaskById = async (taskId: string): Promise<Task | null> => {
 // Get tasks by status
 const getTasksByStatus = async (status: Task['status']): Promise<Task[]> => {
   try {
+    // Use simple query without orderBy to avoid composite indexes
     const q = query(
       collection(db, COLLECTIONS.TASKS),
-      where('status', '==', status),
-      orderBy('createdAt', 'desc')
+      where('status', '==', status)
     );
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map(docSnap => 
+    const tasks = querySnapshot.docs.map(docSnap => 
       mapDocToTask(docSnap.id, docSnap.data())
     );
+
+    // Sort by createdAt descending in memory
+    tasks.sort((a, b) => {
+      const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    return tasks;
   } catch (error) {
     console.error('Error fetching tasks by status:', error);
     throw error;
@@ -297,19 +324,27 @@ const getTasksByStatus = async (status: Task['status']): Promise<Task[]> => {
 // Get overdue tasks
 const getOverdueTasks = async (): Promise<Task[]> => {
   try {
-    const now = new Date().toISOString();
-    // Note: Firestore doesn't support multiple inequality filters on different fields
-    // We'll filter completed tasks in memory
-    const q = query(
-      collection(db, COLLECTIONS.TASKS),
-      where('dueDate', '<', now),
-      orderBy('dueDate', 'asc')
-    );
+    const now = new Date();
+    // Fetch all tasks and filter in memory to avoid composite indexes
+    const q = query(collection(db, COLLECTIONS.TASKS));
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs
+    const tasks = querySnapshot.docs
       .map(docSnap => mapDocToTask(docSnap.id, docSnap.data()))
-      .filter(task => task.status !== 'completed');
+      .filter(task => {
+        if (task.status === 'completed') return false;
+        const dueDate = task.dueDate ? new Date(task.dueDate) : null;
+        return dueDate && dueDate < now;
+      });
+
+    // Sort by dueDate ascending
+    tasks.sort((a, b) => {
+      const dateA = a.dueDate ? new Date(a.dueDate).getTime() : 0;
+      const dateB = b.dueDate ? new Date(b.dueDate).getTime() : 0;
+      return dateA - dateB;
+    });
+
+    return tasks;
   } catch (error) {
     console.error('Error fetching overdue tasks:', error);
     throw error;

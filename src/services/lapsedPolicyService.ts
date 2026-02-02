@@ -7,7 +7,6 @@ import {
   deleteDoc, 
   query, 
   where, 
-  orderBy,
   Timestamp
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
@@ -90,25 +89,33 @@ export const markPolicyAsLapsed = async (policy: Policy, reason?: string): Promi
 
 export const getLapsedPolicies = async (userId?: string): Promise<LapsedPolicy[]> => {
   try {
+    // Use simple query without orderBy to avoid composite indexes
     let q;
     if (userId) {
       q = query(
         collection(db, COLLECTIONS.LAPSED_POLICIES),
-        where('userId', '==', userId),
-        orderBy('lapsedAt', 'desc')
+        where('userId', '==', userId)
       );
     } else {
       q = query(
-        collection(db, COLLECTIONS.LAPSED_POLICIES),
-        orderBy('lapsedAt', 'desc')
+        collection(db, COLLECTIONS.LAPSED_POLICIES)
       );
     }
 
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map(docSnap => 
+    const policies = querySnapshot.docs.map(docSnap => 
       mapDocToLapsedPolicy(docSnap.id, docSnap.data())
     );
+
+    // Sort by lapsedAt descending in memory
+    policies.sort((a, b) => {
+      const dateA = a.lapsedAt ? new Date(a.lapsedAt).getTime() : 0;
+      const dateB = b.lapsedAt ? new Date(b.lapsedAt).getTime() : 0;
+      return dateB - dateA;
+    });
+
+    return policies;
   } catch (error) {
     console.error('Error getting lapsed policies:', error);
     throw error;

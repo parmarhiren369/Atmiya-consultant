@@ -2,8 +2,7 @@ import {
   collection, 
   getDocs, 
   query, 
-  where, 
-  orderBy
+  where
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
 import { storageService } from './storageService';
@@ -25,11 +24,10 @@ interface ClientFolder {
  */
 export async function getClientFolders(userId: string): Promise<ClientFolder[]> {
   try {
-    // Fetch all active policies for the user
+    // Use simple query without orderBy to avoid composite indexes
     const q = query(
       collection(db, COLLECTIONS.POLICIES),
-      where('userId', '==', userId),
-      orderBy('policyholderName', 'asc')
+      where('userId', '==', userId)
     );
     const querySnapshot = await getDocs(q);
 
@@ -82,6 +80,9 @@ export async function getClientFolders(userId: string): Promise<ClientFolder[]> 
 
     await Promise.all(documentCountPromises);
 
+    // Sort by policyholderName ascending in memory
+    clientFolders.sort((a, b) => (a.policyholderName || '').localeCompare(b.policyholderName || ''));
+
     return clientFolders;
   } catch (error) {
     console.error('Error in getClientFolders:', error);
@@ -94,12 +95,10 @@ export async function getClientFolders(userId: string): Promise<ClientFolder[]> 
  */
 export async function getClientDocuments(userId: string, policyholderName: string) {
   try {
-    // For case-insensitive search, we'll fetch all and filter
-    // Firestore doesn't support native case-insensitive queries
+    // Use simple query without orderBy to avoid composite indexes
     const q = query(
       collection(db, COLLECTIONS.POLICIES),
-      where('userId', '==', userId),
-      orderBy('createdAt', 'desc')
+      where('userId', '==', userId)
     );
     const querySnapshot = await getDocs(q);
 
@@ -111,6 +110,13 @@ export async function getClientDocuments(userId: string, policyholderName: strin
       .filter(policy => 
         (policy as Record<string, unknown>).policyholderName?.toString().toLowerCase() === policyholderName.toLowerCase()
       );
+
+    // Sort by createdAt descending in memory
+    policies.sort((a, b) => {
+      const dateA = (a as Record<string, unknown>).createdAt ? new Date((a as Record<string, unknown>).createdAt as string).getTime() : 0;
+      const dateB = (b as Record<string, unknown>).createdAt ? new Date((b as Record<string, unknown>).createdAt as string).getTime() : 0;
+      return dateB - dateA;
+    });
 
     return policies;
   } catch (error) {

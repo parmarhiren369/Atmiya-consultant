@@ -2,12 +2,11 @@ import {
   collection, 
   doc, 
   getDocs, 
-  getDoc, 
+  getDoc,
   addDoc, 
   deleteDoc, 
   query, 
   where, 
-  orderBy,
   Timestamp
 } from 'firebase/firestore';
 import { db, COLLECTIONS } from '../config/firebase';
@@ -60,17 +59,17 @@ export const deletedPolicyService = {
   // Get all deleted policies (optionally filtered by userId)
   getDeletedPolicies: async (userId?: string): Promise<DeletedPolicy[]> => {
     try {
+      // Use simple query without orderBy to avoid requiring composite indexes
+      // Sorting is done in memory after fetching
       let q;
       if (userId) {
         q = query(
           collection(db, COLLECTIONS.DELETED_POLICIES),
-          where('userId', '==', userId),
-          orderBy('deletedAt', 'desc')
+          where('userId', '==', userId)
         );
       } else {
         q = query(
-          collection(db, COLLECTIONS.DELETED_POLICIES),
-          orderBy('deletedAt', 'desc')
+          collection(db, COLLECTIONS.DELETED_POLICIES)
         );
       }
 
@@ -79,6 +78,13 @@ export const deletedPolicyService = {
       const deletedPolicies = querySnapshot.docs.map(docSnap => 
         mapDocToDeletedPolicy(docSnap.id, docSnap.data())
       );
+
+      // Sort by deletedAt descending (newest first) in memory
+      deletedPolicies.sort((a, b) => {
+        const dateA = a.deletedAt ? new Date(a.deletedAt).getTime() : 0;
+        const dateB = b.deletedAt ? new Date(b.deletedAt).getTime() : 0;
+        return dateB - dateA;
+      });
 
       console.log(`Found ${deletedPolicies.length} deleted policies`);
       return deletedPolicies;

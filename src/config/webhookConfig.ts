@@ -17,9 +17,7 @@ export const config = {
   MAX_FILE_SIZE: 10 * 1024 * 1024, // 10MB
 };
 
-if (!config.WEBHOOK_URL) {
-  console.warn('⚠️ n8n Webhook URL not configured. AI PDF extraction will not work. Set VITE_N8N_WEBHOOK_URL in your .env file');
-}
+// Webhook URL is optional - AI PDF extraction feature is disabled if not configured
 
 // Helper function to get the webhook URL
 export const getWebhookUrl = (): string => {
